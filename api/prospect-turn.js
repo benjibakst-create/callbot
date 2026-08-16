@@ -70,6 +70,16 @@ async function callClaudeForJSON({ system, messages, maxTokens }) {
 
     const parsed = extractJSON(clean);
     if (parsed) return parsed;
+
+    // Last resort: even if the full object isn't valid JSON, try to pull
+    // just the spoken line out with a direct pattern match, so the call can
+    // keep going instead of surfacing a raw JSON error to the user.
+    if (attempt === 1) {
+      const speech = extractSpeechOnly(clean);
+      if (speech) {
+        return { speech, patience_delta: 0, hangup: false, won: false };
+      }
+    }
     // otherwise loop and try once more
   }
 
@@ -91,4 +101,17 @@ function extractJSON(text) {
       return null;
     }
   }
+}
+
+// Pulls just the "speech" field's text out with a pattern match, for cases
+// where the overall JSON is broken (e.g. an unescaped quote elsewhere) but
+// the speech value itself is still intact.
+function extractSpeechOnly(text) {
+  const match = text.match(/"speech"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (!match) return null;
+  return match[1]
+    .replace(/\\"/g, '"')
+    .replace(/\\n/g, ' ')
+    .replace(/\\\\/g, '\\')
+    .trim() || null;
 }
