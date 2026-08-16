@@ -28,19 +28,47 @@ module.exports = async (req, res) => {
     return;
   }
 
+  const tool = {
+    name: 'prospect_turn',
+    description: "The prospect's next spoken line and how the call state changes as a result.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        speech: {
+          type: 'string',
+          description: 'What the prospect says out loud, 1-3 short natural spoken sentences.'
+        },
+        patience_delta: {
+          type: 'integer',
+          description: 'How much the patience score changes this turn, from -25 to 15.'
+        },
+        hangup: {
+          type: 'boolean',
+          description: 'True if the prospect hangs up on this turn.'
+        },
+        won: {
+          type: 'boolean',
+          description: 'True if the prospect agrees to a next step (meeting, demo, callback) on this turn.'
+        }
+      },
+      required: ['speech', 'patience_delta', 'hangup', 'won']
+    }
+  };
+
   try {
-    const parsed = await callClaudeForJSON({ system, messages, maxTokens: 500 });
+    const parsed = await callClaudeTool({ system, messages, maxTokens: 500, tool });
     res.status(200).json(parsed);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
 };
 
-const JSON_INSTRUCTION = "\n\nCRITICAL FORMATTING RULE: Output ONLY the raw JSON object — no markdown, no code fences, no explanation before or after it. The JSON must be syntactically valid: double-quote every key and string value, escape any double quotes or apostrophes that appear inside the \"speech\" text properly, and never include a trailing comma.";
-
-async function callClaudeForJSON({ system, messages, maxTokens }) {
-  const fullSystem = system + JSON_INSTRUCTION;
-  let lastRawText = '';
+// Uses forced tool-use instead of asking the model to write JSON as plain
+// text. This is far more reliable — the API guarantees the reply is a
+// structured object matching the schema, rather than us hoping the model's
+// free-text response happens to be valid, well-formed JSON.
+async function callClaudeTool({ system, messages, maxTokens, tool }) {
+  let lastError = 'no response';
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -53,8 +81,10 @@ async function callClaudeForJSON({ system, messages, maxTokens }) {
       body: JSON.stringify({
         model: 'claude-sonnet-5',
         max_tokens: maxTokens,
-        system: fullSystem,
-        messages
+        system,
+        messages,
+        tools: [tool],
+        tool_choice: { type: 'tool', name: tool.name }
       })
     });
 
@@ -64,54 +94,13 @@ async function callClaudeForJSON({ system, messages, maxTokens }) {
       throw { status: response.status, message: data.error?.message || 'Anthropic API error' };
     }
 
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    const clean = text.replace(/```json|```/g, '').trim();
-    lastRawText = clean;
-
-    const parsed = extractJSON(clean);
-    if (parsed) return parsed;
-
-    // Last resort: even if the full object isn't valid JSON, try to pull
-    // just the spoken line out with a direct pattern match, so the call can
-    // keep going instead of surfacing a raw JSON error to the user.
-    if (attempt === 1) {
-      const speech = extractSpeechOnly(clean);
-      if (speech) {
-        return { speech, patience_delta: 0, hangup: false, won: false };
-      }
+    const toolBlock = (data.content || []).find(b => b.type === 'tool_use' && b.name === tool.name);
+    if (toolBlock && toolBlock.input) {
+      return toolBlock.input;
     }
+    lastError = 'Model did not return a structured reply.';
     // otherwise loop and try once more
   }
 
-  throw { status: 502, message: 'Model did not return valid JSON after retry: ' + lastRawText.slice(0, 200) };
-}
-
-// Tries a direct parse first; if that fails (e.g. the model added stray
-// text around the JSON), falls back to grabbing the outermost {...} block.
-function extractJSON(text) {
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start === -1 || end === -1 || end <= start) return null;
-    try {
-      return JSON.parse(text.slice(start, end + 1));
-    } catch (e2) {
-      return null;
-    }
-  }
-}
-
-// Pulls just the "speech" field's text out with a pattern match, for cases
-// where the overall JSON is broken (e.g. an unescaped quote elsewhere) but
-// the speech value itself is still intact.
-function extractSpeechOnly(text) {
-  const match = text.match(/"speech"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-  if (!match) return null;
-  return match[1]
-    .replace(/\\"/g, '"')
-    .replace(/\\n/g, ' ')
-    .replace(/\\\\/g, '\\')
-    .trim() || null;
+  throw { status: 502, message: lastError };
 }
