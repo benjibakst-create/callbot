@@ -879,6 +879,17 @@ document.getElementById('end-btn').addEventListener('click', ()=>{
   finishCall();
 });
 
+  // Turns raw backend errors into something safe and readable to show in the
+// transcript — full detail still goes to the console for debugging.
+function friendlyError(message){
+  if (/valid JSON/i.test(message)){
+    return "Hmm, that response didn't come through cleanly — try your line again.";
+  }
+  if (/Server error|ANTHROPIC_API_KEY/i.test(message)){
+    return "Connection issue reaching the server — try again in a moment.";
+  }
+  return "Something went wrong — try that line again.";
+}
 async function submitUserLine(text){
   if (state.ended) return;
   setMicEnabled(false);
@@ -898,7 +909,7 @@ async function submitUserLine(text){
     setMicEnabled(true);
   }catch(err){
     console.error(err);
-    addLine('system', 'Error: ' + err.message);
+   addLine('system', friendlyError(err.message));
     setOrb('idle','your turn — talk or type');
     setMicEnabled(true);
   }
