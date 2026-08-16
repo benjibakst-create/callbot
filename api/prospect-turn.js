@@ -29,6 +29,20 @@ module.exports = async (req, res) => {
   }
 
   try {
+    const parsed = await callClaudeForJSON({ system, messages, maxTokens: 500 });
+    res.status(200).json(parsed);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+};
+
+const JSON_INSTRUCTION = "\n\nCRITICAL FORMATTING RULE: Output ONLY the raw JSON object — no markdown, no code fences, no explanation before or after it. The JSON must be syntactically valid: double-quote every key and string value, escape any double quotes or apostrophes that appear inside the \"speech\" text properly, and never include a trailing comma.";
+
+async function callClaudeForJSON({ system, messages, maxTokens }) {
+  const fullSystem = system + JSON_INSTRUCTION;
+  let lastRawText = '';
+
+  for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -38,8 +52,8 @@ module.exports = async (req, res) => {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 500,
-        system,
+        max_tokens: maxTokens,
+        system: fullSystem,
         messages
       })
     });
@@ -47,24 +61,20 @@ module.exports = async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      res.status(response.status).json({ error: data.error?.message || 'Anthropic API error' });
-      return;
+      throw { status: response.status, message: data.error?.message || 'Anthropic API error' };
     }
 
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const clean = text.replace(/```json|```/g, '').trim();
+    lastRawText = clean;
 
     const parsed = extractJSON(clean);
-    if (!parsed) {
-      res.status(502).json({ error: 'Model did not return valid JSON: ' + clean.slice(0, 200) });
-      return;
-    }
-
-    res.status(200).json(parsed);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (parsed) return parsed;
+    // otherwise loop and try once more
   }
-};
+
+  throw { status: 502, message: 'Model did not return valid JSON after retry: ' + lastRawText.slice(0, 200) };
+}
 
 // Tries a direct parse first; if that fails (e.g. the model added stray
 // text around the JSON), falls back to grabbing the outermost {...} block.
