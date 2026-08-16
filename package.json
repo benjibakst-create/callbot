@@ -1,0 +1,6 @@
+{
+  "name": "cold-call-trainer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Voice-based cold calling practice app powered by Claude."
+}
