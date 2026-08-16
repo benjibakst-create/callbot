@@ -38,9 +38,11 @@ module.exports = async (req, res) => {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 300,
+        max_tokens: 500,
         system,
-        messages
+        // Prefilling the assistant turn with "{" strongly biases Claude to
+        // reply with JSON only, no preamble.
+        messages: [...messages, { role: 'assistant', content: '{' }]
       })
     });
 
@@ -52,12 +54,13 @@ module.exports = async (req, res) => {
     }
 
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    const clean = text.replace(/```json|```/g, '').trim();
+    // Re-attach the "{" we prefilled since the API only returns the
+    // continuation, not the prefill itself.
+    const withOpenBrace = '{' + text;
+    const clean = withOpenBrace.replace(/```json|```/g, '').trim();
 
-    let parsed;
-    try {
-      parsed = JSON.parse(clean);
-    } catch (e) {
+    const parsed = extractJSON(clean);
+    if (!parsed) {
       res.status(502).json({ error: 'Model did not return valid JSON: ' + clean.slice(0, 200) });
       return;
     }
@@ -67,3 +70,20 @@ module.exports = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// Tries a direct parse first; if that fails (e.g. the model added stray
+// text around the JSON), falls back to grabbing the outermost {...} block.
+function extractJSON(text) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch (e2) {
+      return null;
+    }
+  }
+}
