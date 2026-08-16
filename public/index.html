@@ -966,6 +966,31 @@ function pickVoice(hint){
 }
 
 function speak(text, voiceHint){
+  return speakWithGoogle(text, voiceHint).catch(()=> speakWithBrowser(text, voiceHint));
+}
+
+async function speakWithGoogle(text, voiceHint){
+  const response = await fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-app-code': ACCESS_CODE },
+    body: JSON.stringify({ text, voiceHint })
+  });
+  if (!response.ok){
+    throw new Error('Google TTS request failed: ' + response.status);
+  }
+  const data = await response.json();
+  if (!data.audioContent){
+    throw new Error('Google TTS returned no audio');
+  }
+  return new Promise((resolve, reject)=>{
+    const audio = new Audio('data:audio/mp3;base64,' + data.audioContent);
+    audio.onended = resolve;
+    audio.onerror = () => reject(new Error('Audio playback failed'));
+    audio.play().catch(reject);
+  });
+}
+
+function speakWithBrowser(text, voiceHint){
   return new Promise((resolve)=>{
     if (!window.speechSynthesis){ resolve(); return; }
     speechSynthesis.cancel();
