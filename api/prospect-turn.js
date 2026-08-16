@@ -40,9 +40,7 @@ module.exports = async (req, res) => {
         model: 'claude-sonnet-5',
         max_tokens: 500,
         system,
-        // Prefilling the assistant turn with "{" strongly biases Claude to
-        // reply with JSON only, no preamble.
-        messages: [...messages, { role: 'assistant', content: '{' }]
+        messages
       })
     });
 
@@ -54,10 +52,7 @@ module.exports = async (req, res) => {
     }
 
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    // Re-attach the "{" we prefilled since the API only returns the
-    // continuation, not the prefill itself.
-    const withOpenBrace = '{' + text;
-    const clean = withOpenBrace.replace(/```json|```/g, '').trim();
+    const clean = text.replace(/```json|```/g, '').trim();
 
     const parsed = extractJSON(clean);
     if (!parsed) {
