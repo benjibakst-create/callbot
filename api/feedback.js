@@ -35,10 +35,7 @@ module.exports = async (req, res) => {
         model: 'claude-sonnet-5',
         max_tokens: 1200,
         system,
-        messages: [
-          { role: 'user', content: `Transcript:\n${transcript}` },
-          { role: 'assistant', content: '{' }
-        ]
+        messages: [{ role: 'user', content: `Transcript:\n${transcript}` }]
       })
     });
 
@@ -50,8 +47,7 @@ module.exports = async (req, res) => {
     }
 
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    const withOpenBrace = '{' + text;
-    const clean = withOpenBrace.replace(/```json|```/g, '').trim();
+    const clean = text.replace(/```json|```/g, '').trim();
 
     const parsed = extractJSON(clean);
     if (!parsed) {
