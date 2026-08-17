@@ -1,15 +1,30 @@
+// Serverless function (runs on Vercel). Verifies the caller is a real
+// logged-in Supabase user before spending your Anthropic API budget.
+const { createClient } = require('@supabase/supabase-js');
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
 
-  if (process.env.APP_PASSWORD) {
-    const provided = req.headers['x-app-code'];
-    if (provided !== process.env.APP_PASSWORD) {
-      res.status(401).json({ error: 'Invalid access code' });
-      return;
-    }
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    res.status(401).json({ error: 'Not signed in' });
+    return;
+  }
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    res.status(500).json({ error: 'Server is missing SUPABASE_URL / SUPABASE_ANON_KEY.' });
+    return;
+  }
+
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+  const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+  if (userErr || !userData?.user) {
+    res.status(401).json({ error: 'Invalid or expired session' });
+    return;
   }
 
   const { system, transcript } = req.body || {};
