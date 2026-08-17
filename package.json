@@ -4,3 +4,6 @@
   "private": true,
   "description": "Voice-based cold calling practice app powered by Claude."
 }
+"dependencies": {
+  "@supabase/supabase-js": "^2.45.0"
+}
