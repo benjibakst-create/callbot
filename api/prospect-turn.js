@@ -1,20 +1,28 @@
-// Serverless function (runs on Vercel). Keeps the Anthropic API key on the
-// server — it is never sent to the browser.
+const { createClient } = require('@supabase/supabase-js');
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
 
-  // Optional access-code gate. Set APP_PASSWORD in your Vercel project's
-  // environment variables to require it. If APP_PASSWORD is not set, this
-  // check is skipped and the app is open to anyone with the URL.
-  if (process.env.APP_PASSWORD) {
-    const provided = req.headers['x-app-code'];
-    if (provided !== process.env.APP_PASSWORD) {
-      res.status(401).json({ error: 'Invalid access code' });
-      return;
-    }
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    res.status(401).json({ error: 'Not signed in' });
+    return;
+  }
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    res.status(500).json({ error: 'Server is missing SUPABASE_URL / SUPABASE_ANON_KEY.' });
+    return;
+  }
+
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+  const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+  if (userErr || !userData?.user) {
+    res.status(401).json({ error: 'Invalid or expired session' });
+    return;
   }
 
   const { system, messages } = req.body || {};
@@ -34,22 +42,10 @@ module.exports = async (req, res) => {
     input_schema: {
       type: 'object',
       properties: {
-        speech: {
-          type: 'string',
-          description: 'What the prospect says out loud, 1-3 short natural spoken sentences.'
-        },
-        patience_delta: {
-          type: 'integer',
-          description: 'How much the patience score changes this turn, from -25 to 15.'
-        },
-        hangup: {
-          type: 'boolean',
-          description: 'True if the prospect hangs up on this turn.'
-        },
-        won: {
-          type: 'boolean',
-          description: 'True if the prospect agrees to a next step (meeting, demo, callback) on this turn.'
-        }
+        speech: { type: 'string', description: 'What the prospect says out loud, 1-3 short natural spoken sentences.' },
+        patience_delta: { type: 'integer', description: 'How much the patience score changes this turn, from -25 to 15.' },
+        hangup: { type: 'boolean', description: 'True if the prospect hangs up on this turn.' },
+        won: { type: 'boolean', description: 'True if the prospect agrees to a next step (meeting, demo, callback) on this turn.' }
       },
       required: ['speech', 'patience_delta', 'hangup', 'won']
     }
@@ -63,10 +59,6 @@ module.exports = async (req, res) => {
   }
 };
 
-// Uses forced tool-use instead of asking the model to write JSON as plain
-// text. This is far more reliable — the API guarantees the reply is a
-// structured object matching the schema, rather than us hoping the model's
-// free-text response happens to be valid, well-formed JSON.
 async function callClaudeTool({ system, messages, maxTokens, tool }) {
   let lastError = 'no response';
 
@@ -99,7 +91,6 @@ async function callClaudeTool({ system, messages, maxTokens, tool }) {
       return toolBlock.input;
     }
     lastError = 'Model did not return a structured reply.';
-    // otherwise loop and try once more
   }
 
   throw { status: 502, message: lastError };
