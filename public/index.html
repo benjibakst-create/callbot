@@ -589,8 +589,8 @@
 // ---------- SUPABASE SETUP ----------
 // These two values are safe to expose in client-side code — they're
 // protected by Row Level Security policies in the database, not secrecy.
-const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://ittbuxgnqwupjzwtnicj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0dGJ1eGducXd1cGp6d3RuaWNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5MzAxMjEsImV4cCI6MjEwMjUwNjEyMX0.DLIBeN-9mkOMWS285_5ORRode2Q84z1CJKOR3Cy3X_k';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 function usernameToEmail(username){
