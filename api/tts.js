@@ -1,17 +1,28 @@
-// Serverless function (runs on Vercel). Calls Google Cloud Text-to-Speech
-// and returns base64-encoded MP3 audio. The Google API key stays server-side.
+const { createClient } = require('@supabase/supabase-js');
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
 
-  if (process.env.APP_PASSWORD) {
-    const provided = req.headers['x-app-code'];
-    if (provided !== process.env.APP_PASSWORD) {
-      res.status(401).json({ error: 'Invalid access code' });
-      return;
-    }
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    res.status(401).json({ error: 'Not signed in' });
+    return;
+  }
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    res.status(500).json({ error: 'Server is missing SUPABASE_URL / SUPABASE_ANON_KEY.' });
+    return;
+  }
+
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+  const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+  if (userErr || !userData?.user) {
+    res.status(401).json({ error: 'Invalid or expired session' });
+    return;
   }
 
   const { text, voiceHint } = req.body || {};
@@ -25,9 +36,6 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // WaveNet voices — natural-sounding and covered by Google's free tier
-  // (1M characters/month). Swap these names for other Google voices if
-  // you want a different accent or tone; see cloud.google.com/text-to-speech/docs/voices.
   const voiceName = voiceHint === 'male' ? 'en-US-Wavenet-D' : 'en-US-Wavenet-F';
 
   try {
@@ -51,7 +59,6 @@ module.exports = async (req, res) => {
       return;
     }
 
-    // data.audioContent is already base64-encoded MP3 audio
     res.status(200).json({ audioContent: data.audioContent });
   } catch (err) {
     res.status(500).json({ error: err.message });
