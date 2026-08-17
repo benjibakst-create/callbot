@@ -6,6 +6,7 @@
 <title>Dial-In — Cold Call Trainer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --ink:#12141A;
@@ -61,10 +62,7 @@
     letter-spacing:0.06em;color:var(--text);display:flex;align-items:center;gap:8px;
   }
   .wordmark .dot{width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,var(--brass),var(--brass-deep));box-shadow:0 0 10px rgba(212,168,75,0.55);}
-  .wordmark-tag{
-    font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-faint);
-    letter-spacing:0.08em;text-transform:uppercase;
-  }
+  .topbar-right{display:flex;align-items:center;gap:8px;}
   .nav-link{
     background:transparent;border:1px solid var(--border);color:var(--text-muted);
     font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;
@@ -102,6 +100,7 @@
     font-family:'Space Grotesk',sans-serif;font-size:15px;
     box-shadow:0 1px 0 rgba(255,255,255,0.25) inset, 0 8px 20px -8px rgba(212,168,75,0.5);
     transition:transform .12s ease, box-shadow .12s ease;
+    width:100%;
   }
   .btn-primary:hover{transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,0.25) inset, 0 10px 24px -8px rgba(212,168,75,0.65);}
   .btn-primary:active{transform:translateY(0);}
@@ -143,6 +142,25 @@
     display:flex;align-items:center;justify-content:center;
     font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:rgba(0,0,0,0.72);
     box-shadow:0 1px 0 rgba(255,255,255,0.3) inset;
+  }
+
+  /* ---- auth screen ---- */
+  .auth-tabs{display:flex;gap:8px;margin-bottom:22px;}
+  .auth-tab{
+    flex:1;text-align:center;padding:11px 6px;border-radius:var(--radius-sm);border:1.5px solid var(--border);
+    cursor:pointer;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13.5px;
+    color:var(--text-muted);transition:all .15s ease;
+  }
+  .auth-tab.sel{border-color:var(--brass);color:var(--brass);background:var(--brass-soft);}
+  .account-row{
+    display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-faint);
+    margin:-14px 0 22px 0;font-family:'JetBrains Mono',monospace;
+  }
+  .account-row a{color:var(--text-faint);text-decoration:underline;cursor:pointer;}
+  .account-row a:hover{color:var(--bad);}
+  .owner-badge{
+    font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.05em;
+    color:var(--text-faint);margin-top:6px;
   }
 
   /* ---- persona list / setup screen ---- */
@@ -206,6 +224,7 @@
     background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--brass);
     border-radius:8px;padding:12px 14px;font-size:12.5px;color:var(--text-muted);line-height:1.5;margin-bottom:20px;
   }
+  .banner.error{border-left-color:var(--bad);}
 
   /* ---- history / progress screen ---- */
   .stat-row{display:flex;gap:10px;margin-bottom:20px;}
@@ -407,26 +426,43 @@
 
   <div class="topbar">
     <div class="wordmark"><span class="dot"></span>DIAL–IN</div>
-    <button class="nav-link hidden" id="history-nav-btn">History</button>
-  </div>
-
-  <!-- GATE SCREEN -->
-  <div id="gate-screen" class="screen">
-    <p class="eyebrow">Access</p>
-    <h1>Enter access code</h1>
-    <p class="sub">Ask whoever shared this link with you for the code. If there isn't one, just leave it blank and continue.</p>
-    <div class="type-row">
-      <input type="password" id="gate-input" placeholder="Access code (optional)">
-      <button id="gate-send">Continue</button>
+    <div class="topbar-right">
+      <button class="nav-link hidden" id="history-nav-btn">History</button>
     </div>
   </div>
 
+  <!-- AUTH SCREEN -->
+  <div id="auth-screen" class="screen">
+    <p class="eyebrow">Account</p>
+    <h1 id="auth-heading">Sign in</h1>
+    <p class="sub">Your username is shared with everyone on this app — it shows up on any prospects you create.</p>
+
+    <div class="auth-tabs">
+      <div class="auth-tab sel" id="tab-signin" data-mode="signin">Sign in</div>
+      <div class="auth-tab" id="tab-signup" data-mode="signup">Create account</div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Username</label>
+      <input type="text" id="auth-username" placeholder="lowercase, no spaces, e.g. alexrivera" autocomplete="username">
+      <div class="field-hint">Lowercase letters, numbers, and underscores only, 3–20 characters.</div>
+    </div>
+    <div class="field">
+      <label class="field-label">Password</label>
+      <input type="password" id="auth-password" placeholder="At least 6 characters" autocomplete="current-password">
+    </div>
+
+    <div class="banner error hidden" id="auth-error"></div>
+
+    <button class="btn-primary" id="auth-submit">Sign in</button>
+  </div>
 
   <!-- SETUP SCREEN -->
   <div id="setup-screen" class="screen hidden">
     <p class="eyebrow">Practice call</p>
     <h1>Who's picking up?</h1>
     <p class="sub">You'll cold call this person out loud. They'll react in real time — and hang up on a weak pitch.</p>
+    <div class="account-row"><span id="account-row-name"></span> · <a id="logout-link">Log out</a></div>
     <div id="persona-list"></div>
     <div id="voice-support-note"></div>
   </div>
@@ -435,7 +471,7 @@
   <div id="persona-form-screen" class="screen hidden">
     <p class="eyebrow" id="pf-eyebrow">New prospect</p>
     <h1 id="pf-heading">Build a prospect</h1>
-    <p class="sub">Describe who's picking up the phone. The personality field is what actually drives how they talk and react — be specific.</p>
+    <p class="sub">Describe who's picking up the phone. This will be visible to everyone using the app, credited to your username. The personality field is what actually drives how they talk and react — be specific.</p>
 
     <div class="field-row">
       <div class="field">
@@ -482,7 +518,7 @@
       <div class="field-hint">This is sent straight to the AI as their character brief — the more specific, the more realistic the call.</div>
     </div>
 
-    <div class="banner" id="pf-error" style="display:none;border-left-color:var(--bad);"></div>
+    <div class="banner error hidden" id="pf-error"></div>
 
     <div class="form-actions">
       <button class="btn-ghost" id="pf-cancel">Cancel</button>
@@ -543,13 +579,26 @@
   <div id="history-screen" class="screen hidden">
     <p class="eyebrow">Progress</p>
     <h1>Your call history</h1>
-    <p class="sub">Saved on this device only. Tap any call to see the full debrief and transcript again.</p>
+    <p class="sub">Synced to your account — visible from any device you log into. Tap any call to see the full debrief and transcript again.</p>
     <div id="history-body"></div>
   </div>
 
 </div>
 
 <script>
+// ---------- SUPABASE SETUP ----------
+// These two values are safe to expose in client-side code — they're
+// protected by Row Level Security policies in the database, not secrecy.
+const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function usernameToEmail(username){
+  return username.toLowerCase() + '@dialin.local';
+}
+
+let currentUser = null; // { id, username }
+
 const BUILTIN_PERSONAS = [
   {
     key:'jamie',
@@ -559,7 +608,8 @@ const BUILTIN_PERSONAS = [
     startPatience:70,
     voiceHint:'female',
     desc:"Friendly but juggling three things at once. Will hear you out briefly, but tunes out if you ramble or don't get to the point.",
-    personality:"Warm, a little scattered, genuinely polite. Doesn't want to be rude but is busy running a front desk. Softens if the caller is clear and respectful; gets distracted or curt if the caller rambles."
+    personality:"Warm, a little scattered, genuinely polite. Doesn't want to be rude but is busy running a front desk. Softens if the caller is clear and respectful; gets distracted or curt if the caller rambles.",
+    isCustom:false
   },
   {
     key:'priya',
@@ -569,7 +619,8 @@ const BUILTIN_PERSONAS = [
     startPatience:55,
     voiceHint:'female',
     desc:"Analytical and skeptical. Wants numbers, not adjectives. Will push back hard on price and vague ROI claims.",
-    personality:"Direct, unemotional, time-boxed. Respects specificity and data. Actively annoyed by fluffy sales language, buzzwords, or the caller failing to answer a direct question."
+    personality:"Direct, unemotional, time-boxed. Respects specificity and data. Actively annoyed by fluffy sales language, buzzwords, or the caller failing to answer a direct question.",
+    isCustom:false
   },
   {
     key:'derek',
@@ -579,56 +630,135 @@ const BUILTIN_PERSONAS = [
     startPatience:35,
     voiceHint:'male',
     desc:"Guards his exec's calendar like a hawk. Assumes every call is a pitch he needs to block. Hangs up fast on generic openers.",
-    personality:"Curt, suspicious, has heard every cold-call trick. Immediately tries to identify if this is a sales call and shut it down. Only softens slightly if the caller is unusually direct, honest about being a cold call, or offers something clearly relevant to his exec."
+    personality:"Curt, suspicious, has heard every cold-call trick. Immediately tries to identify if this is a sales call and shut it down. Only softens slightly if the caller is unusually direct, honest about being a cold call, or offers something clearly relevant to his exec.",
+    isCustom:false
   }
 ];
 
-const CLAUDE_MODEL = "claude-sonnet-5";
-const CUSTOM_PERSONAS_KEY = 'dialin_custom_personas';
+let SHARED_PERSONAS = [];
 
-let CUSTOM_PERSONAS = [];
-try{
-  const raw = localStorage.getItem(CUSTOM_PERSONAS_KEY);
-  CUSTOM_PERSONAS = raw ? JSON.parse(raw) : [];
-}catch(e){ CUSTOM_PERSONAS = []; }
-
-function saveCustomPersonas(){
-  try{ localStorage.setItem(CUSTOM_PERSONAS_KEY, JSON.stringify(CUSTOM_PERSONAS)); }catch(e){}
+async function fetchSharedPersonas(){
+  const { data, error } = await sb.from('personas').select('*').order('created_at', { ascending: false });
+  if (error){ console.error(error); SHARED_PERSONAS = []; return; }
+  SHARED_PERSONAS = (data||[]).map(row => ({
+    key: row.id,
+    name: row.name,
+    role: row.role,
+    difficulty: row.difficulty,
+    startPatience: row.start_patience,
+    voiceHint: row.voice_hint,
+    desc: row.card_desc,
+    personality: row.personality,
+    isCustom: true,
+    ownerId: row.owner_id,
+    ownerUsername: row.owner_username
+  }));
 }
+
 function getAllPersonas(){
-  return [...BUILTIN_PERSONAS, ...CUSTOM_PERSONAS];
+  return [...BUILTIN_PERSONAS, ...SHARED_PERSONAS];
 }
 
-// ---------- CALL HISTORY (saved to this device only) ----------
-const CALL_LOG_KEY = 'dialin_call_log';
+// ---------- AUTH ----------
+let authMode = 'signin';
 
-function loadCallLog(){
+document.getElementById('tab-signin').addEventListener('click', ()=> setAuthMode('signin'));
+document.getElementById('tab-signup').addEventListener('click', ()=> setAuthMode('signup'));
+
+function setAuthMode(mode){
+  authMode = mode;
+  document.getElementById('tab-signin').classList.toggle('sel', mode==='signin');
+  document.getElementById('tab-signup').classList.toggle('sel', mode==='signup');
+  document.getElementById('auth-heading').textContent = mode==='signin' ? 'Sign in' : 'Create account';
+  document.getElementById('auth-submit').textContent = mode==='signin' ? 'Sign in' : 'Create account';
+  document.getElementById('auth-error').classList.add('hidden');
+}
+
+function showAuthError(msg){
+  const el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+document.getElementById('auth-submit').addEventListener('click', async ()=>{
+  const usernameRaw = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const username = usernameRaw.toLowerCase();
+
+  if (!/^[a-z0-9_]{3,20}$/.test(username)){
+    showAuthError('Username must be 3-20 characters: lowercase letters, numbers, underscores only.');
+    return;
+  }
+  if (!password || password.length < 6){
+    showAuthError('Password must be at least 6 characters.');
+    return;
+  }
+
+  document.getElementById('auth-submit').disabled = true;
+  document.getElementById('auth-error').classList.add('hidden');
+
   try{
-    const raw = localStorage.getItem(CALL_LOG_KEY);
-    return raw ? JSON.parse(raw) : [];
-  }catch(e){ return []; }
-}
-function saveCallLog(log){
-  try{ localStorage.setItem(CALL_LOG_KEY, JSON.stringify(log)); }catch(e){}
-}
-function addCallRecord(record){
-  const log = loadCallLog();
-  log.unshift(record);
-  saveCallLog(log.slice(0, 200)); // cap so localStorage doesn't grow unbounded
-}
-
-document.getElementById('history-nav-btn').addEventListener('click', ()=>{
-  renderHistory();
-  showScreen('history-screen');
+    if (authMode === 'signup'){
+      const { data: existing } = await sb.from('profiles').select('username').eq('username', username).maybeSingle();
+      if (existing){
+        showAuthError('That username is taken — try another.');
+        return;
+      }
+      const { data, error } = await sb.auth.signUp({
+        email: usernameToEmail(username),
+        password,
+        options: { data: { username } }
+      });
+      if (error) throw error;
+      if (!data.session){
+        showAuthError('Sign-up succeeded but no session was returned — check that "Confirm email" is disabled in your Supabase Auth settings.');
+        return;
+      }
+      await sb.from('profiles').insert({ id: data.user.id, username });
+      currentUser = { id: data.user.id, username };
+    } else {
+      const { data, error } = await sb.auth.signInWithPassword({
+        email: usernameToEmail(username),
+        password
+      });
+      if (error) throw error;
+      currentUser = { id: data.user.id, username: data.user.user_metadata?.username || username };
+    }
+    await enterApp();
+  }catch(err){
+    console.error(err);
+    showAuthError(err.message || 'Something went wrong.');
+  }finally{
+    document.getElementById('auth-submit').disabled = false;
+  }
 });
 
-let ACCESS_CODE = '';
+document.getElementById('logout-link').addEventListener('click', async ()=>{
+  await sb.auth.signOut();
+  currentUser = null;
+  showScreen('auth-screen');
+});
 
-document.getElementById('gate-send').addEventListener('click', enterGate);
-document.getElementById('gate-input').addEventListener('keydown', (e)=>{ if (e.key === 'Enter') enterGate(); });
-function enterGate(){
-  ACCESS_CODE = document.getElementById('gate-input').value.trim();
+async function tryRestoreSession(){
+  const { data: { session } } = await sb.auth.getSession();
+  if (session && session.user){
+    currentUser = { id: session.user.id, username: session.user.user_metadata?.username || 'you' };
+    await enterApp();
+  } else {
+    showScreen('auth-screen');
+  }
+}
+
+async function enterApp(){
+  document.getElementById('account-row-name').textContent = '@' + currentUser.username;
+  await fetchSharedPersonas();
+  renderPersonaList();
   showScreen('setup-screen');
+}
+
+async function getAccessToken(){
+  const { data: { session } } = await sb.auth.getSession();
+  return session ? session.access_token : null;
 }
 
 let state = {
@@ -660,7 +790,7 @@ function showScreen(id){
   void el.offsetWidth;
   el.classList.add('screen');
   const navBtn = document.getElementById('history-nav-btn');
-  navBtn.classList.toggle('hidden', id === 'gate-screen' || id === 'call-screen');
+  navBtn.classList.toggle('hidden', id === 'auth-screen' || id === 'call-screen');
 }
 
 // ---------- AVATAR ----------
@@ -693,15 +823,25 @@ function renderPersonaList(){
   builtLabel.className = 'section-label';
   builtLabel.textContent = 'Built-in prospects';
   list.appendChild(builtLabel);
+  BUILTIN_PERSONAS.forEach(p=> list.appendChild(personaCard(p)));
 
-  BUILTIN_PERSONAS.forEach(p=> list.appendChild(personaCard(p, false)));
+  const mine = SHARED_PERSONAS.filter(p=> p.ownerId === currentUser?.id);
+  const others = SHARED_PERSONAS.filter(p=> p.ownerId !== currentUser?.id);
 
-  if (CUSTOM_PERSONAS.length){
-    const customLabel = document.createElement('div');
-    customLabel.className = 'section-label';
-    customLabel.textContent = 'Your prospects';
-    list.appendChild(customLabel);
-    CUSTOM_PERSONAS.forEach(p=> list.appendChild(personaCard(p, true)));
+  if (mine.length){
+    const lbl = document.createElement('div');
+    lbl.className = 'section-label';
+    lbl.textContent = 'Your prospects';
+    list.appendChild(lbl);
+    mine.forEach(p=> list.appendChild(personaCard(p)));
+  }
+
+  if (others.length){
+    const lbl = document.createElement('div');
+    lbl.className = 'section-label';
+    lbl.textContent = 'Community prospects';
+    list.appendChild(lbl);
+    others.forEach(p=> list.appendChild(personaCard(p)));
   }
 
   const createCard = document.createElement('div');
@@ -710,48 +850,48 @@ function renderPersonaList(){
     <div class="plus-badge">+</div>
     <div>
       <div class="create-persona-title">Create a custom prospect</div>
-      <div class="create-persona-sub">Describe anyone — no code required</div>
+      <div class="create-persona-sub">Visible to everyone, credited to @${escapeHtml(currentUser?.username||'')}</div>
     </div>
   `;
   createCard.onclick = ()=> openPersonaForm(null);
   list.appendChild(createCard);
 
   const note = document.getElementById('voice-support-note');
-  if (!SR){
-    note.innerHTML = `<div class="banner" style="margin-top:20px;">Your browser doesn't support live speech recognition (this works best in Chrome). You can still type your side of the call.</div>`;
-  } else {
-    note.innerHTML = '';
-  }
+  note.innerHTML = !SR
+    ? `<div class="banner" style="margin-top:20px;">Your browser doesn't support live speech recognition (this works best in Chrome). You can still type your side of the call.</div>`
+    : '';
 }
 
-function personaCard(p, isCustom){
+function personaCard(p){
   const card = document.createElement('div');
   card.className = 'persona-card';
-  const avatarId = 'av_' + Math.random().toString(36).slice(2);
+  const isOwner = p.isCustom && p.ownerId === currentUser?.id;
   card.innerHTML = `
-    <div class="avatar" id="${avatarId}"></div>
+    <div class="avatar"></div>
     <div class="persona-body">
       <div class="persona-top">
         <div class="persona-name">${escapeHtml(p.name)}</div>
         <div class="persona-top-right">
           <div class="difficulty ${p.difficulty}">${p.difficulty}</div>
-          ${isCustom ? `<button class="icon-btn" title="Edit" data-action="edit">✎</button><button class="icon-btn danger" title="Delete" data-action="delete">✕</button>` : ''}
+          ${isOwner ? `<button class="icon-btn" title="Edit" data-action="edit">✎</button><button class="icon-btn danger" title="Delete" data-action="delete">✕</button>` : ''}
         </div>
       </div>
       <div class="persona-role">${escapeHtml(p.role)}</div>
       <div class="persona-desc">${escapeHtml(p.desc)}</div>
+      ${p.isCustom ? `<div class="owner-badge">by @${escapeHtml(p.ownerUsername)}</div>` : ''}
     </div>
   `;
   styleAvatar(card.querySelector('.avatar'), p);
 
-  card.addEventListener('click', (e)=>{
+  card.addEventListener('click', async (e)=>{
     const action = e.target.getAttribute('data-action');
     if (action === 'edit'){ e.stopPropagation(); openPersonaForm(p.key); return; }
     if (action === 'delete'){
       e.stopPropagation();
       if (confirm(`Delete "${p.name}"? This can't be undone.`)){
-        CUSTOM_PERSONAS = CUSTOM_PERSONAS.filter(cp=>cp.key !== p.key);
-        saveCustomPersonas();
+        const { error } = await sb.from('personas').delete().eq('id', p.key);
+        if (error){ alert('Could not delete: ' + error.message); return; }
+        await fetchSharedPersonas();
         renderPersonaList();
       }
       return;
@@ -772,7 +912,7 @@ let editingPersonaKey = null;
 
 function openPersonaForm(key){
   editingPersonaKey = key;
-  const existing = key ? CUSTOM_PERSONAS.find(p=>p.key===key) : null;
+  const existing = key ? SHARED_PERSONAS.find(p=>p.key===key) : null;
 
   document.getElementById('pf-eyebrow').textContent = existing ? 'Edit prospect' : 'New prospect';
   document.getElementById('pf-heading').textContent = existing ? 'Edit prospect' : 'Build a prospect';
@@ -784,7 +924,7 @@ function openPersonaForm(key){
   document.getElementById('pf-patience-val').textContent = existing ? existing.startPatience : 55;
   setDifficultySelection(existing ? existing.difficulty : 'medium');
   setVoiceSelection(existing ? existing.voiceHint : 'female');
-  document.getElementById('pf-error').style.display = 'none';
+  document.getElementById('pf-error').classList.add('hidden');
 
   showScreen('persona-form-screen');
 }
@@ -820,7 +960,7 @@ document.getElementById('pf-patience').addEventListener('input', (e)=>{
 
 document.getElementById('pf-cancel').addEventListener('click', ()=> showScreen('setup-screen'));
 
-document.getElementById('pf-save').addEventListener('click', ()=>{
+document.getElementById('pf-save').addEventListener('click', async ()=>{
   const name = document.getElementById('pf-name').value.trim();
   const role = document.getElementById('pf-role').value.trim();
   const desc = document.getElementById('pf-desc').value.trim();
@@ -832,22 +972,31 @@ document.getElementById('pf-save').addEventListener('click', ()=>{
   if (!name || !role || !personality){
     const err = document.getElementById('pf-error');
     err.textContent = 'Name, role, and personality are required — those are what make the call feel real.';
-    err.style.display = 'block';
+    err.classList.remove('hidden');
     return;
   }
 
+  const row = {
+    name, role, difficulty, start_patience: startPatience, voice_hint: voiceHint,
+    card_desc: desc || `${role}.`, personality
+  };
+
+  let error;
   if (editingPersonaKey){
-    const idx = CUSTOM_PERSONAS.findIndex(p=>p.key===editingPersonaKey);
-    if (idx > -1){
-      CUSTOM_PERSONAS[idx] = { ...CUSTOM_PERSONAS[idx], name, role, desc: desc || `${role}.`, personality, difficulty, voiceHint, startPatience };
-    }
+    ({ error } = await sb.from('personas').update(row).eq('id', editingPersonaKey));
   } else {
-    CUSTOM_PERSONAS.push({
-      key: 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-      name, role, desc: desc || `${role}.`, personality, difficulty, voiceHint, startPatience
-    });
+    ({ error } = await sb.from('personas').insert({
+      ...row, owner_id: currentUser.id, owner_username: currentUser.username
+    }));
   }
-  saveCustomPersonas();
+  if (error){
+    const err = document.getElementById('pf-error');
+    err.textContent = 'Could not save: ' + error.message;
+    err.classList.remove('hidden');
+    return;
+  }
+
+  await fetchSharedPersonas();
   renderPersonaList();
   showScreen('setup-screen');
 });
@@ -973,13 +1122,11 @@ document.getElementById('end-btn').addEventListener('click', ()=>{
   finishCall();
 });
 
-// Turns raw backend errors into something safe and readable to show in the
-// transcript — full detail still goes to the console for debugging.
 function friendlyError(message){
-  if (/valid JSON/i.test(message)){
+  if (/valid JSON|structured reply/i.test(message)){
     return "Hmm, that response didn't come through cleanly — try your line again.";
   }
-  if (/Server error|ANTHROPIC_API_KEY/i.test(message)){
+  if (/Server error|ANTHROPIC_API_KEY|Not signed in/i.test(message)){
     return "Connection issue reaching the server — try again in a moment.";
   }
   return "Something went wrong — try that line again.";
@@ -989,7 +1136,7 @@ async function submitUserLine(text){
   if (state.ended) return;
   setMicEnabled(false);
   addLine('you', text);
-  setOrb('thinking','thinking…');
+  setOrb('thinking…');
   try{
     const result = await getProspectTurn(text);
     state.patience = Math.max(0, Math.min(100, state.patience + (result.patience_delta||0)));
@@ -1023,18 +1170,16 @@ RULES:
 - If patience is about to hit 0, end the call abruptly — make "speech" a realistic hang-up line (e.g. "I really have to go, sorry" or just "I'm going to let you go, take care") and set hangup:true.
 - If the caller earns a real next step (you agree to a meeting, demo, or callback) AND patience is above 55, you may agree to it — set won:true and make "speech" your agreement line.
 - Otherwise keep the call going naturally: react, ask a question, raise a realistic objection, or push back — set hangup:false and won:false.
-- Keep "speech" to 1-3 short sentences, like real phone dialogue.
-
-Respond with ONLY valid JSON, no markdown formatting, no code fences, nothing else:
-{"speech": "...", "patience_delta": <integer from -25 to 15>, "hangup": <true|false>, "won": <true|false>}`;
+- Keep "speech" to 1-3 short sentences, like real phone dialogue.`;
 
   const messages = state.history
     .filter(h=>h.speaker==='you' || h.speaker==='prospect')
     .map(h=>({role: h.speaker==='you' ? 'user':'assistant', content: h.text}));
 
+  const token = await getAccessToken();
   const response = await fetch("/api/prospect-turn",{
     method:"POST",
-    headers:{"Content-Type":"application/json","x-app-code":ACCESS_CODE},
+    headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
     body: JSON.stringify({ system, messages })
   });
   const data = await response.json().catch(()=>({}));
@@ -1065,18 +1210,15 @@ function speak(text, voiceHint){
 }
 
 async function speakWithGoogle(text, voiceHint){
+  const token = await getAccessToken();
   const response = await fetch('/api/tts', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-app-code': ACCESS_CODE },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
     body: JSON.stringify({ text, voiceHint })
   });
-  if (!response.ok){
-    throw new Error('Google TTS request failed: ' + response.status);
-  }
+  if (!response.ok){ throw new Error('Google TTS request failed: ' + response.status); }
   const data = await response.json();
-  if (!data.audioContent){
-    throw new Error('Google TTS returned no audio');
-  }
+  if (!data.audioContent){ throw new Error('Google TTS returned no audio'); }
   return new Promise((resolve, reject)=>{
     const audio = new Audio('data:audio/mp3;base64,' + data.audioContent);
     audio.onended = resolve;
@@ -1119,27 +1261,18 @@ async function runFeedback(){
 
   const system = `You are a blunt, expert cold-calling sales coach reviewing a practice call transcript. The "CALLER" is the trainee (a salesperson); the "PROSPECT" was an AI roleplay of ${state.persona.name}, ${state.persona.role} (difficulty: ${state.persona.difficulty}). The call ended in outcome: ${state.outcome==='win'?'the prospect agreed to a next step':state.outcome==='hangup'?'the prospect hung up':'the caller ended the call'}.
 
-Score the CALLER's performance only. Be honest and specific — reference actual lines from the transcript. Respond with ONLY valid JSON, no markdown, no code fences:
-{
-  "overall_score": <0-100>,
-  "opener_score": <0-100>,
-  "objection_handling_score": <0-100>,
-  "closing_score": <0-100>,
-  "strengths": ["...", "..."],
-  "improvements": ["...", "..."],
-  "key_moment": "a short quote or paraphrase of the single most important moment in the call and why it mattered"
-}
-2-3 items each for strengths and improvements, each one sentence, concrete and specific to what was actually said.`;
+Score the CALLER's performance only. Be honest and specific — reference actual lines from the transcript.`;
 
   try{
+    const token = await getAccessToken();
     const response = await fetch("/api/feedback",{
       method:"POST",
-      headers:{"Content-Type":"application/json","x-app-code":ACCESS_CODE},
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
       body: JSON.stringify({ system, transcript: transcriptLines })
     });
     const fb = await response.json().catch(()=>({}));
     if (!response.ok){ throw new Error(fb.error || `Server error ${response.status}`); }
-    renderFeedback(fb);
+    await renderFeedback(fb);
   }catch(err){
     console.error(err);
     document.getElementById('feedback-loading').innerHTML = `
@@ -1151,12 +1284,12 @@ Score the CALLER's performance only. Be honest and specific — reference actual
   }
 }
 
-function renderFeedback(fb){
+async function renderFeedback(fb){
   document.getElementById('feedback-loading').classList.add('hidden');
   const el = document.getElementById('feedback-content');
   el.classList.remove('hidden');
 
-  saveCallToHistory(fb);
+  await saveCallToHistory(fb);
 
   const outcomeMap = {
     win: {cls:'win', label:'Meeting booked'},
@@ -1214,7 +1347,7 @@ function renderFeedback(fb){
       <div class="key-moment">${escapeHtml(fb.key_moment)}</div>
     </div>
 
-    <button class="btn-primary" style="width:100%;margin-top:6px;" onclick="backToSetup()">Call someone else</button>
+    <button class="btn-primary" style="margin-top:6px;" onclick="backToSetup()">Call someone else</button>
   `;
 }
 
@@ -1228,15 +1361,14 @@ function scoreRow(label, val){
   `;
 }
 
-function saveCallToHistory(fb){
-  addCallRecord({
-    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-    date: new Date().toISOString(),
-    personaName: state.persona.name,
-    personaRole: state.persona.role,
+async function saveCallToHistory(fb){
+  const { error } = await sb.from('call_history').insert({
+    user_id: currentUser.id,
+    persona_name: state.persona.name,
+    persona_role: state.persona.role,
     difficulty: state.persona.difficulty,
     outcome: state.outcome,
-    durationSeconds: state.timerSeconds,
+    duration_seconds: state.timerSeconds,
     overall_score: fb.overall_score || 0,
     opener_score: fb.opener_score || 0,
     objection_handling_score: fb.objection_handling_score || 0,
@@ -1244,10 +1376,9 @@ function saveCallToHistory(fb){
     strengths: fb.strengths || [],
     improvements: fb.improvements || [],
     key_moment: fb.key_moment || '',
-    transcript: state.history
-      .filter(h => h.speaker !== 'system')
-      .map(h => ({ speaker: h.speaker, text: h.text }))
+    transcript: state.history.filter(h => h.speaker !== 'system').map(h => ({ speaker: h.speaker, text: h.text }))
   });
+  if (error) console.error('Could not save call history:', error);
 }
 
 function formatDuration(seconds){
@@ -1266,9 +1397,35 @@ function scoreBand(score){
   return 'low';
 }
 
-function renderHistory(){
+document.getElementById('history-nav-btn').addEventListener('click', async ()=>{
+  await renderHistory();
+  showScreen('history-screen');
+});
+
+async function renderHistory(){
   const body = document.getElementById('history-body');
-  const log = loadCallLog();
+  body.innerHTML = `<div class="loading-dots"><div></div><div></div><div></div></div>`;
+
+  const { data, error } = await sb.from('call_history').select('*').order('created_at', { ascending: false }).limit(200);
+  if (error){
+    body.innerHTML = `<div class="banner error">Couldn't load history: ${escapeHtml(error.message)}</div>`;
+    return;
+  }
+  const log = (data||[]).map(r => ({
+    id: r.id,
+    date: r.created_at,
+    personaName: r.persona_name,
+    durationSeconds: r.duration_seconds,
+    outcome: r.outcome,
+    overall_score: r.overall_score,
+    opener_score: r.opener_score,
+    objection_handling_score: r.objection_handling_score,
+    closing_score: r.closing_score,
+    strengths: r.strengths,
+    improvements: r.improvements,
+    key_moment: r.key_moment,
+    transcript: r.transcript
+  }));
 
   if (log.length === 0){
     body.innerHTML = `
@@ -1276,7 +1433,7 @@ function renderHistory(){
         <div class="big-icon">☎</div>
         <p>No calls yet. Finish a practice call and it'll show up here, with your score and full debrief saved for later.</p>
       </div>
-      <button class="btn-primary" style="width:100%;margin-top:6px;" onclick="backToSetup()">Make your first call</button>
+      <button class="btn-primary" style="margin-top:6px;" onclick="backToSetup()">Make your first call</button>
     `;
     return;
   }
@@ -1285,7 +1442,6 @@ function renderHistory(){
   const wins = log.filter(r => r.outcome === 'win').length;
   const avgScore = Math.round(log.reduce((sum,r)=> sum + (r.overall_score||0), 0) / total);
 
-  // Oldest-to-newest for the trend, most recent 12 calls
   const trend = log.slice(0, 12).slice().reverse();
   const sparkBars = trend.map(r => {
     const h = Math.max(4, Math.round((r.overall_score||0) / 100 * 56));
@@ -1366,21 +1522,20 @@ function renderHistory(){
     </div>
   `;
 
-  // Style avatars now that the elements exist in the DOM
   body.querySelectorAll('[data-avatar-name]').forEach(el=>{
     styleAvatar(el, { name: el.getAttribute('data-avatar-name') });
   });
 
-  // Expand/collapse on click (delegated)
   body.querySelectorAll('[data-toggle]').forEach(top=>{
     top.addEventListener('click', ()=>{
       top.closest('.history-item').classList.toggle('open');
     });
   });
 
-  document.getElementById('clear-history-btn').addEventListener('click', ()=>{
-    if (!confirm('Clear all saved call history on this device? This can\'t be undone.')) return;
-    saveCallLog([]);
+  document.getElementById('clear-history-btn').addEventListener('click', async ()=>{
+    if (!confirm("Clear all your saved call history? This can't be undone.")) return;
+    const { error } = await sb.from('call_history').delete().eq('user_id', currentUser.id);
+    if (error){ alert('Could not clear history: ' + error.message); return; }
     renderHistory();
   });
 }
@@ -1390,7 +1545,7 @@ function backToSetup(){
   showScreen('setup-screen');
 }
 
-renderPersonaList();
+tryRestoreSession();
 </script>
 </body>
 </html>
