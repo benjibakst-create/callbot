@@ -65,6 +65,12 @@
     font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-faint);
     letter-spacing:0.08em;text-transform:uppercase;
   }
+  .nav-link{
+    background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;
+    padding:7px 13px;border-radius:20px;cursor:pointer;transition:all .15s ease;
+  }
+  .nav-link:hover{border-color:var(--brass);color:var(--brass);}
 
   .screen{animation:screenIn .38s cubic-bezier(.2,.8,.2,1) both;}
   @keyframes screenIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
@@ -200,6 +206,60 @@
     background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--brass);
     border-radius:8px;padding:12px 14px;font-size:12.5px;color:var(--text-muted);line-height:1.5;margin-bottom:20px;
   }
+
+  /* ---- history / progress screen ---- */
+  .stat-row{display:flex;gap:10px;margin-bottom:20px;}
+  .stat-card{
+    flex:1;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);
+    padding:14px 14px;text-align:center;
+  }
+  .stat-num{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:var(--brass);}
+  .stat-label{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-faint);margin-top:4px;}
+
+  .sparkline-wrap{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 16px 12px 16px;margin-bottom:22px;}
+  .sparkline-title{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:12px;}
+  .sparkline{display:flex;align-items:flex-end;gap:5px;height:56px;}
+  .spark-bar{flex:1;border-radius:3px 3px 1px 1px;background:var(--brass-soft);min-height:4px;position:relative;transition:height .5s cubic-bezier(.2,.8,.2,1);}
+  .spark-bar.good{background:linear-gradient(180deg,var(--good),transparent);}
+  .spark-bar.mid{background:linear-gradient(180deg,var(--brass),transparent);}
+  .spark-bar.low{background:linear-gradient(180deg,var(--bad),transparent);}
+
+  .history-item{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:10px;overflow:hidden;}
+  .history-item-top{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;transition:background .15s ease;}
+  .history-item-top:hover{background:var(--panel-raised);}
+  .hi-info{flex:1;min-width:0;}
+  .hi-name{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14.5px;}
+  .hi-meta{color:var(--text-faint);font-size:11.5px;margin-top:2px;font-family:'JetBrains Mono',monospace;}
+  .hi-right{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .hi-score{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:var(--text);}
+  .hi-score .of100{color:var(--text-faint);font-weight:400;font-size:11px;}
+  .chevron{color:var(--text-faint);font-size:11px;transition:transform .2s ease;}
+  .history-item.open .chevron{transform:rotate(180deg);}
+  .history-item-body{max-height:0;overflow:hidden;transition:max-height .3s ease;}
+  .history-item.open .history-item-body{max-height:2000px;}
+  .history-item-body-inner{padding:4px 16px 18px 16px;border-top:1px solid var(--border);}
+  .mini-transcript{background:var(--ink);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-top:4px;max-height:220px;overflow-y:auto;}
+  .mini-transcript .line{margin-bottom:9px;font-size:12.5px;line-height:1.5;}
+  .mini-transcript .line:last-child{margin-bottom:0;}
+  .mini-transcript .who{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:1px;}
+  .mini-transcript .line.you .who{color:var(--teal);}
+  .mini-transcript .line.prospect .who{color:var(--brass);}
+  details.transcript-details{margin-top:14px;}
+  details.transcript-details summary{
+    font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.05em;text-transform:uppercase;
+    color:var(--text-muted);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;
+  }
+  details.transcript-details summary::-webkit-details-marker{display:none;}
+  details.transcript-details summary::before{content:'▸';font-size:10px;}
+  details.transcript-details[open] summary::before{content:'▾';}
+
+  .empty-state{text-align:center;padding:50px 20px;color:var(--text-muted);}
+  .empty-state .big-icon{font-size:32px;margin-bottom:10px;opacity:0.5;}
+  .empty-state p{font-size:13.5px;line-height:1.6;max-width:320px;margin:0 auto;}
+
+  .history-actions{display:flex;gap:10px;margin-top:22px;}
+  .history-actions .btn-primary{flex:1;}
+  .history-actions .btn-ghost{flex:0 0 auto;padding:14px 18px;}
 
   /* ---- persona form screen ---- */
   .difficulty-toggle{display:flex;gap:8px;}
@@ -347,19 +407,10 @@
 
   <div class="topbar">
     <div class="wordmark"><span class="dot"></span>DIAL–IN</div>
-    <div class="wordmark-tag">Voice trainer</div>
+    <button class="nav-link hidden" id="history-nav-btn">History</button>
   </div>
 
-  <!-- GATE SCREEN -->
-  <div id="gate-screen" class="screen">
-    <p class="eyebrow">Access</p>
-    <h1>Enter access code</h1>
-    <p class="sub">Ask whoever shared this link with you for the code. If there isn't one, just leave it blank and continue.</p>
-    <div class="type-row">
-      <input type="password" id="gate-input" placeholder="Access code (optional)">
-      <button id="gate-send">Continue</button>
-    </div>
-  </div>
+ 
 
   <!-- SETUP SCREEN -->
   <div id="setup-screen" class="screen hidden">
@@ -478,6 +529,14 @@
     <div id="feedback-content" class="hidden"></div>
   </div>
 
+  <!-- HISTORY / PROGRESS SCREEN -->
+  <div id="history-screen" class="screen hidden">
+    <p class="eyebrow">Progress</p>
+    <h1>Your call history</h1>
+    <p class="sub">Saved on this device only. Tap any call to see the full debrief and transcript again.</p>
+    <div id="history-body"></div>
+  </div>
+
 </div>
 
 <script>
@@ -530,6 +589,29 @@ function getAllPersonas(){
   return [...BUILTIN_PERSONAS, ...CUSTOM_PERSONAS];
 }
 
+// ---------- CALL HISTORY (saved to this device only) ----------
+const CALL_LOG_KEY = 'dialin_call_log';
+
+function loadCallLog(){
+  try{
+    const raw = localStorage.getItem(CALL_LOG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function saveCallLog(log){
+  try{ localStorage.setItem(CALL_LOG_KEY, JSON.stringify(log)); }catch(e){}
+}
+function addCallRecord(record){
+  const log = loadCallLog();
+  log.unshift(record);
+  saveCallLog(log.slice(0, 200)); // cap so localStorage doesn't grow unbounded
+}
+
+document.getElementById('history-nav-btn').addEventListener('click', ()=>{
+  renderHistory();
+  showScreen('history-screen');
+});
+
 let ACCESS_CODE = '';
 
 document.getElementById('gate-send').addEventListener('click', enterGate);
@@ -567,6 +649,8 @@ function showScreen(id){
   el.classList.remove('screen');
   void el.offsetWidth;
   el.classList.add('screen');
+  const navBtn = document.getElementById('history-nav-btn');
+  navBtn.classList.toggle('hidden', id === 'gate-screen' || id === 'call-screen');
 }
 
 // ---------- AVATAR ----------
@@ -879,7 +963,7 @@ document.getElementById('end-btn').addEventListener('click', ()=>{
   finishCall();
 });
 
-  // Turns raw backend errors into something safe and readable to show in the
+// Turns raw backend errors into something safe and readable to show in the
 // transcript — full detail still goes to the console for debugging.
 function friendlyError(message){
   if (/valid JSON/i.test(message)){
@@ -890,6 +974,7 @@ function friendlyError(message){
   }
   return "Something went wrong — try that line again.";
 }
+
 async function submitUserLine(text){
   if (state.ended) return;
   setMicEnabled(false);
@@ -909,7 +994,7 @@ async function submitUserLine(text){
     setMicEnabled(true);
   }catch(err){
     console.error(err);
-   addLine('system', friendlyError(err.message));
+    addLine('system', friendlyError(err.message));
     setOrb('idle','your turn — talk or type');
     setMicEnabled(true);
   }
@@ -1061,6 +1146,8 @@ function renderFeedback(fb){
   const el = document.getElementById('feedback-content');
   el.classList.remove('hidden');
 
+  saveCallToHistory(fb);
+
   const outcomeMap = {
     win: {cls:'win', label:'Meeting booked'},
     hangup: {cls:'hangup', label:'Prospect hung up'},
@@ -1129,6 +1216,163 @@ function scoreRow(label, val){
       <div class="score-track"><div class="score-fill" style="width:${val}%;"></div></div>
     </div>
   `;
+}
+
+function saveCallToHistory(fb){
+  addCallRecord({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    date: new Date().toISOString(),
+    personaName: state.persona.name,
+    personaRole: state.persona.role,
+    difficulty: state.persona.difficulty,
+    outcome: state.outcome,
+    durationSeconds: state.timerSeconds,
+    overall_score: fb.overall_score || 0,
+    opener_score: fb.opener_score || 0,
+    objection_handling_score: fb.objection_handling_score || 0,
+    closing_score: fb.closing_score || 0,
+    strengths: fb.strengths || [],
+    improvements: fb.improvements || [],
+    key_moment: fb.key_moment || '',
+    transcript: state.history
+      .filter(h => h.speaker !== 'system')
+      .map(h => ({ speaker: h.speaker, text: h.text }))
+  });
+}
+
+function formatDuration(seconds){
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+function formatHistDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' · ' +
+         d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+function scoreBand(score){
+  if (score >= 70) return 'good';
+  if (score >= 40) return 'mid';
+  return 'low';
+}
+
+function renderHistory(){
+  const body = document.getElementById('history-body');
+  const log = loadCallLog();
+
+  if (log.length === 0){
+    body.innerHTML = `
+      <div class="empty-state">
+        <div class="big-icon">☎</div>
+        <p>No calls yet. Finish a practice call and it'll show up here, with your score and full debrief saved for later.</p>
+      </div>
+      <button class="btn-primary" style="width:100%;margin-top:6px;" onclick="backToSetup()">Make your first call</button>
+    `;
+    return;
+  }
+
+  const total = log.length;
+  const wins = log.filter(r => r.outcome === 'win').length;
+  const avgScore = Math.round(log.reduce((sum,r)=> sum + (r.overall_score||0), 0) / total);
+
+  // Oldest-to-newest for the trend, most recent 12 calls
+  const trend = log.slice(0, 12).slice().reverse();
+  const sparkBars = trend.map(r => {
+    const h = Math.max(4, Math.round((r.overall_score||0) / 100 * 56));
+    return `<div class="spark-bar ${scoreBand(r.overall_score||0)}" style="height:${h}px;" title="${r.overall_score}/100"></div>`;
+  }).join('');
+
+  const items = log.map(r => {
+    const outcomeMap = {
+      win: {cls:'win', label:'Meeting booked'},
+      hangup: {cls:'hangup', label:'Hung up'},
+      end: {cls:'end', label:'Ended'}
+    };
+    const oc = outcomeMap[r.outcome] || outcomeMap.end;
+    const transcriptHtml = (r.transcript||[]).map(t => `
+      <div class="line ${t.speaker}">
+        <span class="who">${t.speaker==='you' ? 'You' : r.personaName}</span>
+        <p>${escapeHtml(t.text)}</p>
+      </div>
+    `).join('');
+
+    return `
+      <div class="history-item" data-id="${r.id}">
+        <div class="history-item-top" data-toggle="${r.id}">
+          <div class="avatar" data-avatar-name="${escapeHtml(r.personaName)}"></div>
+          <div class="hi-info">
+            <div class="hi-name">${escapeHtml(r.personaName)}</div>
+            <div class="hi-meta">${formatHistDate(r.date)} · ${formatDuration(r.durationSeconds)}</div>
+          </div>
+          <div class="hi-right">
+            <span class="outcome-chip ${oc.cls}">${oc.label}</span>
+            <span class="hi-score">${r.overall_score}<span class="of100">/100</span></span>
+            <span class="chevron">▾</span>
+          </div>
+        </div>
+        <div class="history-item-body">
+          <div class="history-item-body-inner">
+            <div class="score-bars" style="margin-top:12px;">
+              ${scoreRow('Opener', r.opener_score)}
+              ${scoreRow('Objection handling', r.objection_handling_score)}
+              ${scoreRow('Closing', r.closing_score)}
+            </div>
+            <div class="fb-block">
+              <h3>What worked</h3>
+              <ul>${(r.strengths||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('') || '<li>—</li>'}</ul>
+            </div>
+            <div class="fb-block">
+              <h3>Work on this next</h3>
+              <ul>${(r.improvements||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('') || '<li>—</li>'}</ul>
+            </div>
+            <div class="fb-block">
+              <h3>Key moment</h3>
+              <div class="key-moment">${escapeHtml(r.key_moment||'—')}</div>
+            </div>
+            <details class="transcript-details">
+              <summary>View full transcript</summary>
+              <div class="mini-transcript">${transcriptHtml || '<span class="hi-meta">No transcript saved.</span>'}</div>
+            </details>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-num">${total}</div><div class="stat-label">Calls</div></div>
+      <div class="stat-card"><div class="stat-num">${wins}/${total}</div><div class="stat-label">Booked</div></div>
+      <div class="stat-card"><div class="stat-num">${avgScore}</div><div class="stat-label">Avg score</div></div>
+    </div>
+    <div class="sparkline-wrap">
+      <div class="sparkline-title">Score trend · last ${trend.length} calls</div>
+      <div class="sparkline">${sparkBars}</div>
+    </div>
+    ${items}
+    <div class="history-actions">
+      <button class="btn-primary" onclick="backToSetup()">Make another call</button>
+      <button class="btn-ghost" id="clear-history-btn">Clear history</button>
+    </div>
+  `;
+
+  // Style avatars now that the elements exist in the DOM
+  body.querySelectorAll('[data-avatar-name]').forEach(el=>{
+    styleAvatar(el, { name: el.getAttribute('data-avatar-name') });
+  });
+
+  // Expand/collapse on click (delegated)
+  body.querySelectorAll('[data-toggle]').forEach(top=>{
+    top.addEventListener('click', ()=>{
+      top.closest('.history-item').classList.toggle('open');
+    });
+  });
+
+  document.getElementById('clear-history-btn').addEventListener('click', ()=>{
+    if (!confirm('Clear all saved call history on this device? This can\'t be undone.')) return;
+    saveCallLog([]);
+    renderHistory();
+  });
 }
 
 function backToSetup(){
