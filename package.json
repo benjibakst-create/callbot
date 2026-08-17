@@ -2,6 +2,9 @@
   "name": "cold-call-trainer",
   "version": "1.0.0",
   "private": true,
-  "description": "Voice-based cold calling practice app powered by Claude."
-
+  "description": "Voice-based cold calling practice app powered by Claude.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.x.x",
+    "@supabase/supabase-js": "^2.45.0"
+  }
 }
