@@ -600,6 +600,14 @@ function usernameToEmail(username){
 
 let currentUser = null; // { id, username }
 
+let audioUnlocked = false;
+function unlockAudioOnce(){
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  const silence = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==');
+  silence.play().catch(()=>{});
+}
+document.addEventListener('click', unlockAudioOnce, { once: true });
 const BUILTIN_PERSONAS = [
   {
     key:'jamie',
@@ -1229,9 +1237,14 @@ async function speakWithGoogle(text, voiceHint){
   if (!data.audioContent){ throw new Error('Google TTS returned no audio'); }
   return new Promise((resolve, reject)=>{
     const audio = new Audio('data:audio/mp3;base64,' + data.audioContent);
-    audio.onended = resolve;
-    audio.onerror = () => reject(new Error('Audio playback failed'));
-    audio.play().catch(reject);
+    let settled = false;
+    const finish = (fn) => { if (!settled){ settled = true; fn(); } };
+    audio.onended = () => finish(resolve);
+    audio.onerror = () => finish(() => reject(new Error('Audio playback failed')));
+    // iOS Safari can silently hang on play() without a direct user gesture.
+    // Never let a stuck call sit longer than the actual audio should take.
+    setTimeout(() => finish(resolve), 15000);
+    audio.play().catch(() => finish(() => reject(new Error('Audio playback failed'))));
   });
 }
 
