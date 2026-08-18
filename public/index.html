@@ -136,6 +136,12 @@
   .field-hint{font-size:11.5px;color:var(--text-faint);margin-top:6px;line-height:1.5;}
   .field-row{display:flex;gap:12px;}
   .field-row .field{flex:1;}
+  #persona-search{
+  font-family:'Inter',sans-serif;
+}
+#persona-search::placeholder{
+  color:var(--text-faint);
+}
 
   /* ---- avatar badge ---- */
   .avatar{
@@ -460,13 +466,16 @@
 
   <!-- SETUP SCREEN -->
   <div id="setup-screen" class="screen hidden">
-    <p class="eyebrow">Practice call</p>
-    <h1>Who's picking up?</h1>
-    <p class="sub">You'll cold call this person out loud. They'll react in real time — and hang up on a weak pitch.</p>
-    <div class="account-row"><span id="account-row-name"></span> · <a id="logout-link">Log out</a></div>
-    <div id="persona-list"></div>
-    <div id="voice-support-note"></div>
+  <p class="eyebrow">Practice call</p>
+  <h1>Who's picking up?</h1>
+  <p class="sub">You'll cold call this person out loud. They'll react in real time — and hang up on a weak pitch.</p>
+  <div class="account-row"><span id="account-row-name"></span> · <a id="logout-link">Log out</a></div>
+  <div class="field" style="margin-bottom:18px;">
+    <input type="text" id="persona-search" placeholder="Search prospects — e.g. \"skeptical\", \"CFO\", \"gatekeeper\"">
   </div>
+  <div id="persona-list"></div>
+  <div id="voice-support-note"></div>
+</div>
 
   <!-- CUSTOM PERSONA FORM -->
   <div id="persona-form-screen" class="screen hidden">
@@ -748,6 +757,10 @@ document.getElementById('logout-link').addEventListener('click', async ()=>{
   showScreen('auth-screen');
 });
 
+  document.getElementById('persona-search').addEventListener('input', ()=>{
+  renderPersonaList();
+});
+
 async function tryRestoreSession(){
   const { data: { session } } = await sb.auth.getSession();
   if (session && session.user){
@@ -824,18 +837,31 @@ function styleAvatar(el, persona){
 }
 
 // ---------- SETUP SCREEN ----------
+function personaMatchesSearch(p, term){
+  if (!term) return true;
+  const haystack = [p.name, p.role, p.desc, p.personality]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(term.toLowerCase());
+}
+
 function renderPersonaList(){
+  const term = document.getElementById('persona-search').value.trim();
   const list = document.getElementById('persona-list');
   list.innerHTML = '';
 
-  const builtLabel = document.createElement('div');
-  builtLabel.className = 'section-label';
-  builtLabel.textContent = 'Built-in prospects';
-  list.appendChild(builtLabel);
-  BUILTIN_PERSONAS.forEach(p=> list.appendChild(personaCard(p)));
+  const builtinMatches = BUILTIN_PERSONAS.filter(p => personaMatchesSearch(p, term));
+  const mine = SHARED_PERSONAS.filter(p => p.ownerId === currentUser?.id && personaMatchesSearch(p, term));
+  const others = SHARED_PERSONAS.filter(p => p.ownerId !== currentUser?.id && personaMatchesSearch(p, term));
 
-  const mine = SHARED_PERSONAS.filter(p=> p.ownerId === currentUser?.id);
-  const others = SHARED_PERSONAS.filter(p=> p.ownerId !== currentUser?.id);
+  if (builtinMatches.length){
+    const builtLabel = document.createElement('div');
+    builtLabel.className = 'section-label';
+    builtLabel.textContent = 'Built-in prospects';
+    list.appendChild(builtLabel);
+    builtinMatches.forEach(p=> list.appendChild(personaCard(p)));
+  }
 
   if (mine.length){
     const lbl = document.createElement('div');
@@ -853,24 +879,34 @@ function renderPersonaList(){
     others.forEach(p=> list.appendChild(personaCard(p)));
   }
 
-  const createCard = document.createElement('div');
-  createCard.className = 'create-persona-card';
-  createCard.innerHTML = `
-    <div class="plus-badge">+</div>
-    <div>
-      <div class="create-persona-title">Create a custom prospect</div>
-      <div class="create-persona-sub">Visible to everyone, credited to @${escapeHtml(currentUser?.username||'')}</div>
-    </div>
-  `;
-  createCard.onclick = ()=> openPersonaForm(null);
-  list.appendChild(createCard);
+  if (term && !builtinMatches.length && !mine.length && !others.length){
+    const empty = document.createElement('div');
+    empty.className = 'banner';
+    empty.textContent = `No prospects match "${term}" — try a different search, or create one yourself.`;
+    list.appendChild(empty);
+  }
+
+  // Only show the "create" card when not actively searching, so it doesn't
+  // clutter search results
+  if (!term){
+    const createCard = document.createElement('div');
+    createCard.className = 'create-persona-card';
+    createCard.innerHTML = `
+      <div class="plus-badge">+</div>
+      <div>
+        <div class="create-persona-title">Create a custom prospect</div>
+        <div class="create-persona-sub">Visible to everyone, credited to @${escapeHtml(currentUser?.username||'')}</div>
+      </div>
+    `;
+    createCard.onclick = ()=> openPersonaForm(null);
+    list.appendChild(createCard);
+  }
 
   const note = document.getElementById('voice-support-note');
   note.innerHTML = !SR
     ? `<div class="banner" style="margin-top:20px;">Your browser doesn't support live speech recognition (this works best in Chrome). You can still type your side of the call.</div>`
     : '';
 }
-
 function personaCard(p){
   const card = document.createElement('div');
   card.className = 'persona-card';
