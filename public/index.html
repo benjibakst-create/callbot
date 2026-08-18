@@ -1258,7 +1258,17 @@ function pickVoice(hint){
 }
 
 function speak(text, voiceHint){
-  return speakWithGoogle(text, voiceHint).catch(()=> speakWithBrowser(text, voiceHint));
+  const attempt = speakWithGoogle(text, voiceHint).catch(()=> speakWithBrowser(text, voiceHint));
+  return withTimeout(attempt, 20000);
+}
+
+function withTimeout(promise, ms){
+  return new Promise((resolve)=>{
+    let done = false;
+    const finish = () => { if (!done){ done = true; resolve(); } };
+    promise.then(finish).catch(finish);
+    setTimeout(finish, ms);
+  });
 }
 
 async function speakWithGoogle(text, voiceHint){
@@ -1293,8 +1303,13 @@ function speakWithBrowser(text, voiceHint){
     if (v) utter.voice = v;
     utter.rate = 1.02;
     utter.pitch = 1.0;
-    utter.onend = resolve;
-    utter.onerror = resolve;
+    let settled = false;
+    const finish = () => { if (!settled){ settled = true; resolve(); } };
+    utter.onend = finish;
+    utter.onerror = finish;
+    // iOS Safari's onend can fail to fire reliably, especially after the
+    // screen locks or the tab loses focus — never let this hang the call.
+    setTimeout(finish, 12000);
     speechSynthesis.speak(utter);
   });
 }
