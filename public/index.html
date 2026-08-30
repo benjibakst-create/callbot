@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dial-In — Cold Call Trainer</title>
-<link rel="icon" type="image/png" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -136,12 +135,6 @@
   .field-hint{font-size:11.5px;color:var(--text-faint);margin-top:6px;line-height:1.5;}
   .field-row{display:flex;gap:12px;}
   .field-row .field{flex:1;}
-  #persona-search{
-  font-family:'Inter',sans-serif;
-}
-#persona-search::placeholder{
-  color:var(--text-faint);
-}
 
   /* ---- avatar badge ---- */
   .avatar{
@@ -150,6 +143,33 @@
     font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:rgba(0,0,0,0.72);
     box-shadow:0 1px 0 rgba(255,255,255,0.3) inset;
   }
+
+  /* ---- landing screen ---- */
+  .landing-hero{text-align:center;padding:8px 0 4px 0;}
+  .landing-eyebrow{justify-content:center;}
+  .landing-h1{font-size:32px;line-height:1.15;}
+  .landing-sub{max-width:420px;margin:0 auto 0 auto;}
+  .landing-cta-row{display:flex;flex-direction:column;gap:12px;margin:28px 0 8px 0;}
+  .landing-signin-row{text-align:center;font-size:12.5px;color:var(--text-faint);}
+  .landing-signin-row a{color:var(--text-muted);text-decoration:underline;cursor:pointer;}
+  .landing-signin-row a:hover{color:var(--brass);}
+  .feature-grid{display:flex;flex-direction:column;gap:12px;margin-top:34px;}
+  .feature-card{
+    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);
+    padding:16px 18px;display:flex;gap:14px;align-items:flex-start;
+  }
+  .feature-icon{
+    width:38px;height:38px;border-radius:10px;background:var(--brass-soft);color:var(--brass);
+    display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;
+  }
+  .feature-title{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;margin-bottom:3px;}
+  .feature-desc{font-size:12.5px;color:var(--text-muted);line-height:1.5;}
+  .back-link{
+    font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.05em;text-transform:uppercase;
+    color:var(--text-faint);cursor:pointer;display:inline-flex;align-items:center;gap:5px;margin-bottom:18px;
+    transition:color .15s ease;
+  }
+  .back-link:hover{color:var(--brass);}
 
   /* ---- auth screen ---- */
   .auth-tabs{display:flex;gap:8px;margin-bottom:22px;}
@@ -169,6 +189,15 @@
     font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.05em;
     color:var(--text-faint);margin-top:6px;
   }
+
+  /* ---- search bar ---- */
+  .search-wrap{position:relative;margin-bottom:18px;}
+  .search-wrap input{padding-left:38px;}
+  .search-icon{
+    position:absolute;left:13px;top:50%;transform:translateY(-50%);
+    color:var(--text-faint);font-size:14px;pointer-events:none;
+  }
+  .search-empty{text-align:center;padding:30px 16px;color:var(--text-faint);font-size:13px;}
 
   /* ---- persona list / setup screen ---- */
   .section-label{
@@ -438,8 +467,52 @@
     </div>
   </div>
 
+  <!-- LANDING SCREEN -->
+  <div id="landing-screen" class="screen">
+    <div class="landing-hero">
+      <p class="eyebrow landing-eyebrow">Voice-based training</p>
+      <h1 class="landing-h1">Practice Realistic Cold Calls</h1>
+      <p class="sub landing-sub">Talk out loud to AI prospects who react in real time, push back, and hang up on a weak pitch — then get an honest debrief after every call.</p>
+    </div>
+    <div class="landing-cta-row">
+      <button class="btn-primary" id="landing-start-btn">Get started — it's free</button>
+      <div class="landing-signin-row">Already have an account? <a id="landing-signin-link">Sign in</a></div>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🎙</div>
+        <div>
+          <div class="feature-title">Real voice roleplay</div>
+          <div class="feature-desc">Speak out loud — no scripts to read, just a live conversation with an AI prospect.</div>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">☎</div>
+        <div>
+          <div class="feature-title">Prospects that push back</div>
+          <div class="feature-desc">They raise objections, lose patience, and hang up on generic pitches — just like the real thing.</div>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <div>
+          <div class="feature-title">Debrief after every call</div>
+          <div class="feature-desc">Get a scored breakdown of your opener, objection handling, and close — saved to your history.</div>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">👥</div>
+        <div>
+          <div class="feature-title">Shared prospect library</div>
+          <div class="feature-desc">Build custom prospects and see what everyone else on your team has created too.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- AUTH SCREEN -->
-  <div id="auth-screen" class="screen">
+  <div id="auth-screen" class="screen hidden">
+    <div class="back-link" id="auth-back-link">← Back</div>
     <p class="eyebrow">Account</p>
     <h1 id="auth-heading">Sign in</h1>
     <p class="sub">Your username is shared with everyone on this app — it shows up on any prospects you create.</p>
@@ -466,16 +539,17 @@
 
   <!-- SETUP SCREEN -->
   <div id="setup-screen" class="screen hidden">
-  <p class="eyebrow">Practice call</p>
-  <h1>Who's picking up?</h1>
-  <p class="sub">You'll cold call this person out loud. They'll react in real time — and hang up on a weak pitch.</p>
-  <div class="account-row"><span id="account-row-name"></span> · <a id="logout-link">Log out</a></div>
-  <div class="field" style="margin-bottom:18px;">
-    <input type="text" id="persona-search" placeholder="Search prospects — e.g. \"skeptical\", \"CFO\", \"gatekeeper\"">
+    <p class="eyebrow">Practice call</p>
+    <h1>Who's picking up?</h1>
+    <p class="sub">You'll cold call this person out loud. They'll react in real time — and hang up on a weak pitch.</p>
+    <div class="account-row"><span id="account-row-name"></span> · <a id="logout-link">Log out</a></div>
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input type="text" id="persona-search" placeholder="Search by name, role, difficulty, or creator…">
+    </div>
+    <div id="persona-list"></div>
+    <div id="voice-support-note"></div>
   </div>
-  <div id="persona-list"></div>
-  <div id="voice-support-note"></div>
-</div>
 
   <!-- CUSTOM PERSONA FORM -->
   <div id="persona-form-screen" class="screen hidden">
@@ -607,6 +681,7 @@ function usernameToEmail(username){
   return username.toLowerCase() + '@dialin.local';
 }
 
+
 let currentUser = null; // { id, username }
 
 let audioUnlocked = false;
@@ -617,6 +692,7 @@ function unlockAudioOnce(){
   silence.play().catch(()=>{});
 }
 document.addEventListener('click', unlockAudioOnce, { once: true });
+
 const BUILTIN_PERSONAS = [
   {
     key:'jamie',
@@ -654,6 +730,7 @@ const BUILTIN_PERSONAS = [
 ];
 
 let SHARED_PERSONAS = [];
+let personaSearchQuery = '';
 
 async function fetchSharedPersonas(){
   const { data, error } = await sb.from('personas').select('*').order('created_at', { ascending: false });
@@ -676,6 +753,19 @@ async function fetchSharedPersonas(){
 function getAllPersonas(){
   return [...BUILTIN_PERSONAS, ...SHARED_PERSONAS];
 }
+
+// ---------- LANDING SCREEN ----------
+document.getElementById('landing-start-btn').addEventListener('click', ()=>{
+  setAuthMode('signup');
+  showScreen('auth-screen');
+});
+document.getElementById('landing-signin-link').addEventListener('click', ()=>{
+  setAuthMode('signin');
+  showScreen('auth-screen');
+});
+document.getElementById('auth-back-link').addEventListener('click', ()=>{
+  showScreen('landing-screen');
+});
 
 // ---------- AUTH ----------
 let authMode = 'signin';
@@ -754,11 +844,7 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
 document.getElementById('logout-link').addEventListener('click', async ()=>{
   await sb.auth.signOut();
   currentUser = null;
-  showScreen('auth-screen');
-});
-
-  document.getElementById('persona-search').addEventListener('input', ()=>{
-  renderPersonaList();
+  showScreen('landing-screen');
 });
 
 async function tryRestoreSession(){
@@ -767,7 +853,7 @@ async function tryRestoreSession(){
     currentUser = { id: session.user.id, username: session.user.user_metadata?.username || 'you' };
     await enterApp();
   } else {
-    showScreen('auth-screen');
+    showScreen('landing-screen');
   }
 }
 
@@ -799,7 +885,7 @@ let recognizing = false;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SR){
   recognition = new SR();
-  recognition.continuous = true;
+  recognition.continuous = false;
   recognition.interimResults = true;
   recognition.lang = 'en-US';
 }
@@ -812,7 +898,7 @@ function showScreen(id){
   void el.offsetWidth;
   el.classList.add('screen');
   const navBtn = document.getElementById('history-nav-btn');
-  navBtn.classList.toggle('hidden', id === 'auth-screen' || id === 'call-screen');
+  navBtn.classList.toggle('hidden', id === 'landing-screen' || id === 'auth-screen' || id === 'call-screen');
 }
 
 // ---------- AVATAR ----------
@@ -837,30 +923,35 @@ function styleAvatar(el, persona){
 }
 
 // ---------- SETUP SCREEN ----------
-function personaMatchesSearch(p, term){
-  if (!term) return true;
-  const haystack = [p.name, p.role, p.desc, p.personality]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(term.toLowerCase());
+document.getElementById('persona-search').addEventListener('input', (e)=>{
+  personaSearchQuery = e.target.value;
+  renderPersonaList();
+});
+
+function personaMatchesSearch(p, query){
+  if (!query) return true;
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [p.name, p.role, p.desc, p.difficulty, p.ownerUsername]
+    .filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(q);
 }
 
 function renderPersonaList(){
-  const term = document.getElementById('persona-search').value.trim();
   const list = document.getElementById('persona-list');
   list.innerHTML = '';
 
-  const builtinMatches = BUILTIN_PERSONAS.filter(p => personaMatchesSearch(p, term));
-  const mine = SHARED_PERSONAS.filter(p => p.ownerId === currentUser?.id && personaMatchesSearch(p, term));
-  const others = SHARED_PERSONAS.filter(p => p.ownerId !== currentUser?.id && personaMatchesSearch(p, term));
+  const query = personaSearchQuery;
+  const builtins = BUILTIN_PERSONAS.filter(p=> personaMatchesSearch(p, query));
+  const mine = SHARED_PERSONAS.filter(p=> p.ownerId === currentUser?.id && personaMatchesSearch(p, query));
+  const others = SHARED_PERSONAS.filter(p=> p.ownerId !== currentUser?.id && personaMatchesSearch(p, query));
 
-  if (builtinMatches.length){
-    const builtLabel = document.createElement('div');
-    builtLabel.className = 'section-label';
-    builtLabel.textContent = 'Built-in prospects';
-    list.appendChild(builtLabel);
-    builtinMatches.forEach(p=> list.appendChild(personaCard(p)));
+  if (builtins.length){
+    const lbl = document.createElement('div');
+    lbl.className = 'section-label';
+    lbl.textContent = 'Built-in prospects';
+    list.appendChild(lbl);
+    builtins.forEach(p=> list.appendChild(personaCard(p)));
   }
 
   if (mine.length){
@@ -879,16 +970,14 @@ function renderPersonaList(){
     others.forEach(p=> list.appendChild(personaCard(p)));
   }
 
-  if (term && !builtinMatches.length && !mine.length && !others.length){
+  if (query.trim() && builtins.length === 0 && mine.length === 0 && others.length === 0){
     const empty = document.createElement('div');
-    empty.className = 'banner';
-    empty.textContent = `No prospects match "${term}" — try a different search, or create one yourself.`;
+    empty.className = 'search-empty';
+    empty.textContent = `No prospects match "${query.trim()}" — try a different name, role, or difficulty.`;
     list.appendChild(empty);
   }
 
-  // Only show the "create" card when not actively searching, so it doesn't
-  // clutter search results
-  if (!term){
+  if (!query.trim()){
     const createCard = document.createElement('div');
     createCard.className = 'create-persona-card';
     createCard.innerHTML = `
@@ -907,6 +996,7 @@ function renderPersonaList(){
     ? `<div class="banner" style="margin-top:20px;">Your browser doesn't support live speech recognition (this works best in Chrome). You can still type your side of the call.</div>`
     : '';
 }
+
 function personaCard(p){
   const card = document.createElement('div');
   card.className = 'persona-card';
@@ -1117,44 +1207,37 @@ function setMicEnabled(enabled){
   if (SR && enabled){ document.getElementById('mic-btn').textContent = '🎙 Click to speak'; }
 }
 
-let speechBuffer = '';
-
 document.getElementById('mic-btn').addEventListener('click', ()=>{
-  if (!recognition) return;
-  if (!recognizing){
-    speechBuffer = '';
-    recognizing = true;
-    setOrb('listening','listening…');
-    document.getElementById('mic-btn').classList.add('active');
-    document.getElementById('mic-btn').textContent = '● listening — click to stop';
-    try{ recognition.start(); }catch(e){}
-  } else {
-    recognition.stop();
-  }
+  if (!recognition || recognizing) return;
+  recognizing = true;
+  setOrb('listening','listening…');
+  document.getElementById('mic-btn').classList.add('active');
+  document.getElementById('mic-btn').textContent = '● listening — click to stop';
+  try{ recognition.start(); }catch(e){}
 });
 
 if (recognition){
   recognition.onend = ()=>{
-  recognizing = false;
-  document.getElementById('mic-btn').classList.remove('active');
-  document.getElementById('mic-btn').textContent = '🎙 Click to speak';
-  const text = speechBuffer.trim();
-  speechBuffer = '';
-  if (text){
-    submitUserLine(text);
-  }
-};
+    recognizing = false;
+    document.getElementById('mic-btn').classList.remove('active');
+    document.getElementById('mic-btn').textContent = '🎙 Click to speak';
+  };
   recognition.onerror = ()=>{
     recognizing = false;
     document.getElementById('mic-btn').classList.remove('active');
     document.getElementById('mic-btn').textContent = '🎙 Click to speak';
     setOrb('idle',"didn't catch that — try again or type");
   };
-recognition.addEventListener('result', (e)=>{
-  for (let i=e.resultIndex; i<e.results.length; i++){
-    if (e.results[i].isFinal) speechBuffer += e.results[i][0].transcript + ' ';
-  }
-});
+  recognition.addEventListener('result', (e)=>{
+    let finalTranscript = '';
+    for (let i=e.resultIndex; i<e.results.length; i++){
+      if (e.results[i].isFinal) finalTranscript += e.results[i][0].transcript;
+    }
+    if (finalTranscript.trim()){
+      recognition.stop();
+      submitUserLine(finalTranscript.trim());
+    }
+  });
 }
 
 document.getElementById('type-send').addEventListener('click', ()=>{
@@ -1188,7 +1271,7 @@ async function submitUserLine(text){
   if (state.ended) return;
   setMicEnabled(false);
   addLine('you', text);
-  setOrb('thinking…');
+  setOrb('thinking','thinking…');
   try{
     const result = await getProspectTurn(text);
     state.patience = Math.max(0, Math.min(100, state.patience + (result.patience_delta||0)));
@@ -1287,8 +1370,6 @@ async function speakWithGoogle(text, voiceHint){
     const finish = (fn) => { if (!settled){ settled = true; fn(); } };
     audio.onended = () => finish(resolve);
     audio.onerror = () => finish(() => reject(new Error('Audio playback failed')));
-    // iOS Safari can silently hang on play() without a direct user gesture.
-    // Never let a stuck call sit longer than the actual audio should take.
     setTimeout(() => finish(resolve), 15000);
     audio.play().catch(() => finish(() => reject(new Error('Audio playback failed'))));
   });
@@ -1307,8 +1388,6 @@ function speakWithBrowser(text, voiceHint){
     const finish = () => { if (!settled){ settled = true; resolve(); } };
     utter.onend = finish;
     utter.onerror = finish;
-    // iOS Safari's onend can fail to fire reliably, especially after the
-    // screen locks or the tab loses focus — never let this hang the call.
     setTimeout(finish, 12000);
     speechSynthesis.speak(utter);
   });
