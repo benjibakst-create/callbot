@@ -853,6 +853,9 @@ async function tryRestoreSession(){
   if (session && session.user){
     currentUser = { id: session.user.id, username: session.user.user_metadata?.username || 'you' };
     await enterApp();
+  } else if (new URLSearchParams(window.location.search).get('signup') === '1'){
+    setAuthMode('signup');
+    showScreen('auth-screen');
   } else {
     showScreen('landing-screen');
   }
