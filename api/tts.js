@@ -25,7 +25,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const { text, voiceHint } = req.body || {};
+const { text, voiceHint, speakingRate } = req.body || {};
   if (!text) {
     res.status(400).json({ error: 'Missing text in request body' });
     return;
@@ -37,20 +37,21 @@ module.exports = async (req, res) => {
   }
 
   const voiceName = voiceHint === 'male' ? 'en-US-Wavenet-D' : 'en-US-Wavenet-F';
-
   try {
     const response = await fetch(
-      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${process.env.GOOGLE_TTS_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { text },
-          voice: { languageCode: 'en-US', name: voiceName },
-          audioConfig: { audioEncoding: 'MP3', speakingRate: 1.02 }
-        })
-      }
-    );
+      
+  `https://texttospeech.googleapis.com/v1/text:synthesize?key=${process.env.GOOGLE_TTS_API_KEY}`,
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      input: { text },
+      voice: { languageCode: 'en-US', name: voiceName },
+      audioConfig: { audioEncoding: 'MP3', speakingRate: speakingRate || 1.02 }
+    })
+  }
+);
+         
 
     const data = await response.json();
 
