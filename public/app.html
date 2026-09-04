@@ -120,7 +120,7 @@
   .btn-secondary.active{background:var(--bad-soft);border-color:var(--bad);color:var(--bad);}
   .btn-secondary:disabled{opacity:0.4;cursor:not-allowed;}
 
-  input[type=text], input[type=password], textarea, select{
+  input[type=text], input[type=password], input[type=email], textarea, select{
     width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);
     padding:12px 13px;border-radius:var(--radius-sm);font-family:'Inter',sans-serif;font-size:13.5px;
     transition:border-color .15s ease;
@@ -152,6 +152,8 @@
     color:var(--text-muted);transition:all .15s ease;
   }
   .auth-tab.sel{border-color:var(--brass);color:var(--brass);background:var(--brass-soft);}
+  .inline-link{color:var(--text-muted);text-decoration:underline;cursor:pointer;font-size:12.5px;}
+  .inline-link:hover{color:var(--brass);}
   .account-row{
     display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-faint);
     margin:-14px 0 22px 0;font-family:'JetBrains Mono',monospace;
@@ -456,14 +458,58 @@
       <input type="text" id="auth-username" placeholder="lowercase, no spaces, e.g. alexrivera" autocomplete="username">
       <div class="field-hint">Lowercase letters, numbers, and underscores only, 3–20 characters.</div>
     </div>
+    <div class="field hidden" id="auth-email-field">
+      <label class="field-label">Email</label>
+      <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email">
+      <div class="field-hint">Only used for account recovery — never shown to other users.</div>
+    </div>
     <div class="field">
       <label class="field-label">Password</label>
       <input type="password" id="auth-password" placeholder="At least 6 characters" autocomplete="current-password">
+      <div class="field-hint" id="forgot-password-row" style="text-align:right;">
+        <a class="inline-link" id="forgot-password-link">Forgot password?</a>
+      </div>
     </div>
 
     <div class="banner error hidden" id="auth-error"></div>
 
     <button class="btn-primary" id="auth-submit">Sign in</button>
+  </div>
+
+  <!-- FORGOT PASSWORD SCREEN -->
+  <div id="forgot-screen" class="screen hidden">
+    <p class="eyebrow">Account</p>
+    <h1>Reset your password</h1>
+    <p class="sub">Enter your username. If we have a recovery email on file for it, we'll send a reset link there.</p>
+
+    <div class="field">
+      <label class="field-label">Username</label>
+      <input type="text" id="forgot-username" placeholder="your username" autocomplete="username">
+    </div>
+
+    <div class="banner error hidden" id="forgot-error"></div>
+    <div class="banner hidden" id="forgot-success">If that username has a recovery email on file, we've sent a reset link to it — check your inbox.</div>
+
+    <button class="btn-primary" id="forgot-submit">Send reset link</button>
+    <div class="account-row" style="justify-content:center;margin-top:16px;">
+      <a class="inline-link" id="forgot-back-link">Back to sign in</a>
+    </div>
+  </div>
+
+  <!-- RESET PASSWORD SCREEN (landed on via the emailed reset link) -->
+  <div id="reset-screen" class="screen hidden">
+    <p class="eyebrow">Account</p>
+    <h1>Set a new password</h1>
+    <p class="sub">You followed a password reset link. Choose a new password below.</p>
+
+    <div class="field">
+      <label class="field-label">New password</label>
+      <input type="password" id="reset-password" placeholder="At least 6 characters" autocomplete="new-password">
+    </div>
+
+    <div class="banner error hidden" id="reset-error"></div>
+
+    <button class="btn-primary" id="reset-submit">Set new password</button>
   </div>
 
   <!-- SETUP SCREEN -->
@@ -696,6 +742,8 @@ function setAuthMode(mode){
   document.getElementById('auth-heading').textContent = mode==='signin' ? 'Sign in' : 'Create account';
   document.getElementById('auth-submit').textContent = mode==='signin' ? 'Sign in' : 'Create account';
   document.getElementById('auth-error').classList.add('hidden');
+  document.getElementById('auth-email-field').classList.toggle('hidden', mode!=='signup');
+  document.getElementById('forgot-password-row').classList.toggle('hidden', mode!=='signin');
 }
 
 function showAuthError(msg){
@@ -718,6 +766,15 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
     return;
   }
 
+  let email = '';
+  if (authMode === 'signup'){
+    email = document.getElementById('auth-email').value.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      showAuthError("Enter a valid email address — it's only used if you ever need to reset your password.");
+      return;
+    }
+  }
+
   document.getElementById('auth-submit').disabled = true;
   document.getElementById('auth-error').classList.add('hidden');
 
@@ -729,7 +786,7 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
         return;
       }
       const { data, error } = await sb.auth.signUp({
-        email: usernameToEmail(username),
+        email,
         password,
         options: { data: { username } }
       });
@@ -738,11 +795,12 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
         showAuthError('Sign-up succeeded but no session was returned — check that "Confirm email" is disabled in your Supabase Auth settings.');
         return;
       }
-      await sb.from('profiles').insert({ id: data.user.id, username });
+      await sb.from('profiles').insert({ id: data.user.id, username, email });
       currentUser = { id: data.user.id, username };
     } else {
+      const loginEmail = await resolveLoginEmail(username);
       const { data, error } = await sb.auth.signInWithPassword({
-        email: usernameToEmail(username),
+        email: loginEmail,
         password
       });
       if (error) throw error;
@@ -757,11 +815,98 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
   }
 });
 
+// Sign-in looks up the account's real email by username. Accounts created
+// before real emails were collected fall back to the old synthetic address
+// so they keep working without needing to reset anything.
+async function resolveLoginEmail(username){
+  const { data } = await sb.from('profiles').select('email').eq('username', username).maybeSingle();
+  if (data && data.email) return data.email;
+  return usernameToEmail(username);
+}
+
 document.getElementById('logout-link').addEventListener('click', async ()=>{
   await sb.auth.signOut();
   currentUser = null;
   setAuthMode('signup');
   showScreen('auth-screen');
+});
+
+// ---------- FORGOT / RESET PASSWORD ----------
+document.getElementById('forgot-password-link').addEventListener('click', ()=>{
+  document.getElementById('forgot-username').value = document.getElementById('auth-username').value.trim();
+  document.getElementById('forgot-error').classList.add('hidden');
+  document.getElementById('forgot-success').classList.add('hidden');
+  showScreen('forgot-screen');
+});
+
+document.getElementById('forgot-back-link').addEventListener('click', ()=>{
+  setAuthMode('signin');
+  showScreen('auth-screen');
+});
+
+document.getElementById('forgot-submit').addEventListener('click', async ()=>{
+  const username = document.getElementById('forgot-username').value.trim().toLowerCase();
+  const errEl = document.getElementById('forgot-error');
+  const okEl = document.getElementById('forgot-success');
+  errEl.classList.add('hidden');
+  okEl.classList.add('hidden');
+
+  if (!/^[a-z0-9_]{3,20}$/.test(username)){
+    errEl.textContent = 'Enter the username on the account.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  document.getElementById('forgot-submit').disabled = true;
+  try{
+    const { data } = await sb.from('profiles').select('email').eq('username', username).maybeSingle();
+    if (data && data.email){
+      await sb.auth.resetPasswordForEmail(data.email, {
+        redirectTo: window.location.origin + window.location.pathname
+      });
+    }
+    // Same message either way — don't reveal whether a username exists.
+    okEl.classList.remove('hidden');
+  }catch(err){
+    console.error(err);
+    okEl.classList.remove('hidden');
+  }finally{
+    document.getElementById('forgot-submit').disabled = false;
+  }
+});
+
+document.getElementById('reset-submit').addEventListener('click', async ()=>{
+  const newPassword = document.getElementById('reset-password').value;
+  const errEl = document.getElementById('reset-error');
+  errEl.classList.add('hidden');
+
+  if (!newPassword || newPassword.length < 6){
+    errEl.textContent = 'Password must be at least 6 characters.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  document.getElementById('reset-submit').disabled = true;
+  try{
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+    const { data: { session } } = await sb.auth.getSession();
+    currentUser = { id: session.user.id, username: session.user.user_metadata?.username || 'you' };
+    await enterApp();
+  }catch(err){
+    console.error(err);
+    errEl.textContent = err.message || 'Something went wrong.';
+    errEl.classList.remove('hidden');
+  }finally{
+    document.getElementById('reset-submit').disabled = false;
+  }
+});
+
+// Fires when the person lands back here via the emailed reset link.
+sb.auth.onAuthStateChange((event)=>{
+  if (event === 'PASSWORD_RECOVERY'){
+    showScreen('reset-screen');
+  }
 });
 
 async function tryRestoreSession(){
@@ -844,7 +989,7 @@ function showScreen(id){
   void el.offsetWidth;
   el.classList.add('screen');
   const navBtn = document.getElementById('history-nav-btn');
-  navBtn.classList.toggle('hidden', id === 'auth-screen' || id === 'call-screen');
+  navBtn.classList.toggle('hidden', id === 'auth-screen' || id === 'call-screen' || id === 'forgot-screen' || id === 'reset-screen');
 }
 
 // ---------- AVATAR ----------
