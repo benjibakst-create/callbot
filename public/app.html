@@ -798,13 +798,25 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
       await sb.from('profiles').insert({ id: data.user.id, username, email });
       currentUser = { id: data.user.id, username };
     } else {
-      const loginEmail = await resolveLoginEmail(username);
-      const { data, error } = await sb.auth.signInWithPassword({
-        email: loginEmail,
-        password
+      // The email column isn't readable by the browser at all (locked down
+      // at the database level) — /api/login resolves username to email
+      // server-side and does the actual sign-in there, handing back tokens.
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
       });
-      if (error) throw error;
-      currentUser = { id: data.user.id, username: data.user.user_metadata?.username || username };
+      const result = await response.json().catch(()=>({}));
+      if (!response.ok) throw new Error(result.error || 'Invalid username or password.');
+
+      const { error: setErr } = await sb.auth.setSession({
+        access_token: result.access_token,
+        refresh_token: result.refresh_token
+      });
+      if (setErr) throw setErr;
+
+      const { data: { session } } = await sb.auth.getSession();
+      currentUser = { id: session.user.id, username: result.username };
     }
     await enterApp();
   }catch(err){
@@ -814,15 +826,6 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
     document.getElementById('auth-submit').disabled = false;
   }
 });
-
-// Sign-in looks up the account's real email by username. Accounts created
-// before real emails were collected fall back to the old synthetic address
-// so they keep working without needing to reset anything.
-async function resolveLoginEmail(username){
-  const { data } = await sb.from('profiles').select('email').eq('username', username).maybeSingle();
-  if (data && data.email) return data.email;
-  return usernameToEmail(username);
-}
 
 document.getElementById('logout-link').addEventListener('click', async ()=>{
   await sb.auth.signOut();
@@ -859,12 +862,16 @@ document.getElementById('forgot-submit').addEventListener('click', async ()=>{
 
   document.getElementById('forgot-submit').disabled = true;
   try{
-    const { data } = await sb.from('profiles').select('email').eq('username', username).maybeSingle();
-    if (data && data.email){
-      await sb.auth.resetPasswordForEmail(data.email, {
+    // /api/forgot-password looks up the email server-side (the column
+    // isn't readable from the browser) and sends the reset email itself.
+    await fetch('/api/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
         redirectTo: window.location.origin + window.location.pathname
-      });
-    }
+      })
+    });
     // Same message either way — don't reveal whether a username exists.
     okEl.classList.remove('hidden');
   }catch(err){
