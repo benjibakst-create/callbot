@@ -154,6 +154,13 @@
   .auth-tab.sel{border-color:var(--brass);color:var(--brass);background:var(--brass-soft);}
   .inline-link{color:var(--text-muted);text-decoration:underline;cursor:pointer;font-size:12.5px;}
   .inline-link:hover{color:var(--brass);}
+  .upgrade-features{margin:0 0 26px 0;padding-left:20px;color:var(--text-muted);font-size:13.5px;line-height:1.85;}
+  .pro-badge{
+    font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:0.05em;text-transform:uppercase;
+    padding:3px 7px;border-radius:20px;background:var(--brass-soft);color:var(--brass);white-space:nowrap;
+  }
+  .persona-card.locked{opacity:0.72;}
+  .persona-card.locked:hover{opacity:0.9;}
   .account-row{
     display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-faint);
     margin:-14px 0 22px 0;font-family:'JetBrains Mono',monospace;
@@ -438,6 +445,7 @@
   <div class="topbar">
     <div class="wordmark"><span class="dot"></span>DIAL–IN</div>
     <div class="topbar-right">
+      <button class="nav-link hidden" id="upgrade-nav-btn">Upgrade</button>
       <button class="nav-link hidden" id="history-nav-btn">History</button>
     </div>
   </div>
@@ -512,12 +520,46 @@
     <button class="btn-primary" id="reset-submit">Set new password</button>
   </div>
 
+  <!-- UPGRADE SCREEN -->
+  <div id="upgrade-screen" class="screen hidden">
+    <p class="eyebrow">Upgrade</p>
+    <h1>Go Pro</h1>
+    <p class="sub">Free practice calls stay free forever — built-in prospects, live voice roleplay, and a debrief after every call. Pro adds:</p>
+    <ul class="upgrade-features">
+      <li>Build and call your own custom prospects</li>
+      <li>Call anyone in the shared community library</li>
+      <li>Full call history, saved and scored over time</li>
+    </ul>
+
+    <div class="voice-toggle" id="billing-interval">
+      <div class="voice-opt sel" data-val="month">Monthly</div>
+      <div class="voice-opt" data-val="year">Yearly <span style="opacity:.7;">(2 months free)</span></div>
+    </div>
+
+    <div class="banner error hidden" id="upgrade-error" style="margin-top:18px;"></div>
+
+    <button class="btn-primary" id="upgrade-submit" style="margin-top:18px;">Continue to checkout</button>
+    <div class="account-row" style="justify-content:center;margin-top:16px;">
+      <a class="inline-link" id="upgrade-back-link">Back</a>
+    </div>
+  </div>
+
+  <!-- CHECKOUT PENDING SCREEN -->
+  <div id="checkout-pending-screen" class="screen hidden">
+    <p class="eyebrow">Upgrade</p>
+    <h1>Confirming your subscription…</h1>
+    <div class="loading-dots"><div></div><div></div><div></div></div>
+  </div>
+
   <!-- SETUP SCREEN -->
   <div id="setup-screen" class="screen hidden">
     <p class="eyebrow">Practice call</p>
     <h1>Who's picking up?</h1>
     <p class="sub">You'll cold call this person out loud. They'll react in real time — and hang up on a weak pitch.</p>
-    <div class="account-row"><span id="account-row-name"></span> · <a id="logout-link">Log out</a></div>
+    <div class="account-row">
+      <span id="account-row-name"></span> · <a id="logout-link">Log out</a>
+      <span id="manage-billing-wrap" class="hidden"> · <a id="manage-billing-link">Manage billing</a></span>
+    </div>
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
       <input type="text" id="persona-search" placeholder="Search by name, role, difficulty, or creator…">
@@ -916,6 +958,55 @@ sb.auth.onAuthStateChange((event)=>{
   }
 });
 
+// ---------- BILLING ----------
+document.getElementById('upgrade-nav-btn').addEventListener('click', ()=> showScreen('upgrade-screen'));
+document.getElementById('upgrade-back-link').addEventListener('click', ()=> showScreen('setup-screen'));
+
+let billingInterval = 'month';
+document.querySelectorAll('#billing-interval .voice-opt').forEach(el=>{
+  el.addEventListener('click', ()=>{
+    billingInterval = el.getAttribute('data-val');
+    document.querySelectorAll('#billing-interval .voice-opt').forEach(o=> o.classList.toggle('sel', o===el));
+  });
+});
+
+document.getElementById('upgrade-submit').addEventListener('click', async ()=>{
+  const errEl = document.getElementById('upgrade-error');
+  errEl.classList.add('hidden');
+  document.getElementById('upgrade-submit').disabled = true;
+  try{
+    const token = await getAccessToken();
+    const response = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+      body: JSON.stringify({ interval: billingInterval })
+    });
+    const data = await response.json().catch(()=>({}));
+    if (!response.ok || !data.url) throw new Error(data.error || 'Could not start checkout.');
+    window.location.href = data.url;
+  }catch(err){
+    console.error(err);
+    errEl.textContent = err.message || 'Something went wrong.';
+    errEl.classList.remove('hidden');
+    document.getElementById('upgrade-submit').disabled = false;
+  }
+});
+
+document.getElementById('manage-billing-link').addEventListener('click', async ()=>{
+  try{
+    const token = await getAccessToken();
+    const response = await fetch('/api/create-portal-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token }
+    });
+    const data = await response.json().catch(()=>({}));
+    if (!response.ok || !data.url) throw new Error(data.error || 'Could not open billing portal.');
+    window.location.href = data.url;
+  }catch(err){
+    alert(err.message || 'Something went wrong.');
+  }
+});
+
 async function tryRestoreSession(){
   const { data: { session } } = await sb.auth.getSession();
   if (session && session.user){
@@ -927,8 +1018,49 @@ async function tryRestoreSession(){
   }
 }
 
+// Pro if the plan is actively 'pro', OR if it was canceled but the paid
+// period hasn't ended yet — Stripe's subscription status alone can't tell
+// "canceled, ends today" from "canceled, already paid through the 20th",
+// so access is decided by the stored expiration date, not the status word.
+function isPro(){
+  if (!currentUser) return false;
+  if (currentUser.plan === 'pro') return true;
+  if (currentUser.planRenewsAt && new Date(currentUser.planRenewsAt) > new Date()) return true;
+  return false;
+}
+
+async function refreshPlan(){
+  const { data } = await sb.from('profiles').select('plan, plan_renews_at').eq('id', currentUser.id).maybeSingle();
+  currentUser.plan = (data && data.plan) || 'free';
+  currentUser.planRenewsAt = (data && data.plan_renews_at) || null;
+}
+
+// Webhook processing can lag a second or two behind the Stripe redirect,
+// so give it a few short retries before giving up and moving on anyway.
+async function pollForPro(){
+  for (let i=0;i<6;i++){
+    await refreshPlan();
+    if (isPro()) return;
+    await new Promise(r=> setTimeout(r, 1500));
+  }
+}
+
 async function enterApp(){
   document.getElementById('account-row-name').textContent = '@' + currentUser.username;
+  await refreshPlan();
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('checkout') === 'success' && !isPro()){
+    showScreen('checkout-pending-screen');
+    await pollForPro();
+  }
+  if (params.has('checkout')){
+    params.delete('checkout');
+    const qs = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (qs ? '?'+qs : ''));
+  }
+
+  document.getElementById('manage-billing-wrap').classList.toggle('hidden', !isPro());
   await fetchSharedPersonas();
   renderPersonaList();
   showScreen('setup-screen');
@@ -995,8 +1127,10 @@ function showScreen(id){
   el.classList.remove('screen');
   void el.offsetWidth;
   el.classList.add('screen');
-  const navBtn = document.getElementById('history-nav-btn');
-  navBtn.classList.toggle('hidden', id === 'auth-screen' || id === 'call-screen' || id === 'forgot-screen' || id === 'reset-screen');
+  const hideNav = id === 'auth-screen' || id === 'call-screen' || id === 'forgot-screen' || id === 'reset-screen'
+    || id === 'upgrade-screen' || id === 'checkout-pending-screen';
+  document.getElementById('history-nav-btn').classList.toggle('hidden', hideNav);
+  document.getElementById('upgrade-nav-btn').classList.toggle('hidden', hideNav || isPro());
 }
 
 // ---------- AVATAR ----------
@@ -1078,14 +1212,20 @@ function renderPersonaList(){
   if (!query.trim()){
     const createCard = document.createElement('div');
     createCard.className = 'create-persona-card';
-    createCard.innerHTML = `
+    createCard.innerHTML = isPro() ? `
       <div class="plus-badge">+</div>
       <div>
         <div class="create-persona-title">Create a custom prospect</div>
         <div class="create-persona-sub">Visible to everyone, credited to @${escapeHtml(currentUser?.username||'')}</div>
       </div>
+    ` : `
+      <div class="plus-badge">+</div>
+      <div>
+        <div class="create-persona-title">Create a custom prospect <span class="pro-badge">Pro</span></div>
+        <div class="create-persona-sub">Upgrade to build and share your own prospects</div>
+      </div>
     `;
-    createCard.onclick = ()=> openPersonaForm(null);
+    createCard.onclick = ()=> isPro() ? openPersonaForm(null) : showScreen('upgrade-screen');
     list.appendChild(createCard);
   }
 
@@ -1099,6 +1239,8 @@ function personaCard(p){
   const card = document.createElement('div');
   card.className = 'persona-card';
   const isOwner = p.isCustom && p.ownerId === currentUser?.id;
+  const locked = p.isCustom && !isPro();
+  if (locked) card.classList.add('locked');
   card.innerHTML = `
     <div class="avatar"></div>
     <div class="persona-body">
@@ -1106,6 +1248,7 @@ function personaCard(p){
         <div class="persona-name">${escapeHtml(p.name)}</div>
         <div class="persona-top-right">
           <div class="difficulty ${p.difficulty}">${p.difficulty}</div>
+          ${locked ? `<span class="pro-badge">Pro</span>` : ''}
           ${isOwner ? `<button class="icon-btn" title="Edit" data-action="edit">✎</button><button class="icon-btn danger" title="Delete" data-action="delete">✕</button>` : ''}
         </div>
       </div>
@@ -1129,6 +1272,7 @@ function personaCard(p){
       }
       return;
     }
+    if (locked){ showScreen('upgrade-screen'); return; }
     startCall(p);
   });
   return card;
@@ -1892,6 +2036,7 @@ function scoreBand(score){
 }
 
 document.getElementById('history-nav-btn').addEventListener('click', async ()=>{
+  if (!isPro()){ showScreen('upgrade-screen'); return; }
   await renderHistory();
   showScreen('history-screen');
 });
