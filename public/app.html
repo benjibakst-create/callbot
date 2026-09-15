@@ -1022,13 +1022,16 @@ async function tryRestoreSession(){
 // period hasn't ended yet — Stripe's subscription status alone can't tell
 // "canceled, ends today" from "canceled, already paid through the 20th",
 // so access is decided by the stored expiration date, not the status word.
+// A free_access override (set manually in Supabase) always wins, for
+// comped accounts like beta testers or team members.
 function isPro(){
   if (!currentUser) return false;
+  if (currentUser.freeAccess) return true;
   if (currentUser.plan === 'pro') return true;
   if (currentUser.planRenewsAt && new Date(currentUser.planRenewsAt) > new Date()) return true;
   return false;
 }
-
+  
 async function refreshPlan(){
   const { data } = await sb.from('profiles').select('plan, plan_renews_at').eq('id', currentUser.id).maybeSingle();
   currentUser.plan = (data && data.plan) || 'free';
