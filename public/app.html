@@ -822,7 +822,7 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
 
   try{
     if (authMode === 'signup'){
-      const { data: existing } = await sb.from('profiles').select('username').eq('username', username).maybeSingle();
+      const { data: existing } = await sb.from('profiles_public').select('username').eq('username', username).maybeSingle();
       if (existing){
         showAuthError('That username is taken — try another.');
         return;
@@ -1033,9 +1033,10 @@ function isPro(){
 }
   
 async function refreshPlan(){
-  const { data } = await sb.from('profiles').select('plan, plan_renews_at').eq('id', currentUser.id).maybeSingle();
+  const { data } = await sb.from('profiles').select('plan, plan_renews_at, free_access').eq('id', currentUser.id).maybeSingle();
   currentUser.plan = (data && data.plan) || 'free';
   currentUser.planRenewsAt = (data && data.plan_renews_at) || null;
+  currentUser.freeAccess = !!(data && data.free_access);
 }
 
 // Webhook processing can lag a second or two behind the Stripe redirect,
