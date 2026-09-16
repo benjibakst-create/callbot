@@ -155,7 +155,18 @@
   .auth-tab.sel{border-color:var(--brass);color:var(--brass);background:var(--brass-soft);}
   .inline-link{color:var(--text-muted);text-decoration:underline;cursor:pointer;font-size:12.5px;}
   .inline-link:hover{color:var(--brass);}
-  .upgrade-features{margin:0 0 26px 0;padding-left:20px;color:var(--text-muted);font-size:13.5px;line-height:1.85;}
+    .perk-list{display:flex;flex-direction:column;gap:10px;margin:0 0 26px 0;}
+  .perk-item{
+    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);
+    padding:14px 16px;display:flex;gap:12px;align-items:flex-start;
+  }
+  .perk-item.highlight{border-color:rgba(212,168,75,0.4);background:linear-gradient(135deg, var(--brass-soft), var(--panel) 65%);}
+  .perk-icon{
+    width:36px;height:36px;border-radius:10px;background:var(--brass-soft);color:var(--brass);
+    display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;
+  }
+  .perk-title{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;margin-bottom:2px;}
+  .perk-desc{font-size:12.5px;color:var(--text-muted);line-height:1.5;}
   .pro-badge{
     font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:0.05em;text-transform:uppercase;
     padding:3px 7px;border-radius:20px;background:var(--brass-soft);color:var(--brass);white-space:nowrap;
@@ -526,15 +537,41 @@
     <p class="eyebrow">Upgrade</p>
     <h1>Go Pro</h1>
     <p class="sub">Free practice calls stay free forever — built-in prospects, live voice roleplay, and a debrief after every call. Pro adds:</p>
-    <ul class="upgrade-features">
-      <li>Build and call your own custom prospects</li>
-      <li>Call anyone in the shared community library</li>
-      <li>Full call history, saved and scored over time</li>
-    </ul>
+
+    <div class="perk-list">
+      <div class="perk-item highlight">
+        <div class="perk-icon">🎙</div>
+        <div>
+          <div class="perk-title">More realistic voices</div>
+          <div class="perk-desc">Natural, expressive prospect voices — the single biggest upgrade to how real a call feels.</div>
+        </div>
+      </div>
+      <div class="perk-item">
+        <div class="perk-icon">🛠</div>
+        <div>
+          <div class="perk-title">Build custom prospects</div>
+          <div class="perk-desc">Create your own AI prospects with whatever personality and difficulty you want to practice against.</div>
+        </div>
+      </div>
+      <div class="perk-item">
+        <div class="perk-icon">👥</div>
+        <div>
+          <div class="perk-title">Community library</div>
+          <div class="perk-desc">Call anyone the community has built, credited to whoever made them.</div>
+        </div>
+      </div>
+      <div class="perk-item">
+        <div class="perk-icon">📈</div>
+        <div>
+          <div class="perk-title">Full call history</div>
+          <div class="perk-desc">Every call saved and scored over time, synced across your devices.</div>
+        </div>
+      </div>
+    </div>
 
     <div class="voice-toggle" id="billing-interval">
       <div class="voice-opt sel" data-val="month">Monthly</div>
-      <div class="voice-opt" data-val="year">Yearly <span style="opacity:.7;">(2 months free)</span></div>
+      <div class="voice-opt" data-val="year">Yearly</div>
     </div>
 
     <div class="banner error hidden" id="upgrade-error" style="margin-top:18px;"></div>
