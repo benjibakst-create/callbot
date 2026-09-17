@@ -1778,15 +1778,7 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
     setMicEnabled(true);
   }
 }
-  }catch(err){
-    console.error(err);
-    prospectSpeaking = false;
-    addLine('system', friendlyError(err.message));
-    setOrb('idle','your turn — talk or type');
-    setMicEnabled(true);
-  }
-}
-
+ 
 async function getProspectTurnWithAudio(latestUserText, toneDescriptor, wasInterrupted, voiceHint, speakingRate){
   const p = state.persona;
   const toneLine = toneDescriptor
