@@ -3,6 +3,11 @@
 // Google TTS (free tier). Pro status is verified server-side against
 // Supabase — the client's own claim of being Pro is never trusted, so
 // there's no way to force Deepgram usage onto a free account.
+//
+// TEMPORARY: this version includes extra "debug" fields in the JSON
+// response so the actual routing decision is visible in the browser's
+// Network tab, since Vercel's log viewer has been unreliable to read
+// during setup. Safe to strip out once this is confirmed working.
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -23,29 +28,38 @@ module.exports = async (req, res) => {
 
   const authHeader = req.headers['authorization'] || '';
   const token = authHeader.replace(/^Bearer\s+/i, '');
-  const isPro = await checkIsPro(token, user.id);
+  const proCheck = await checkIsPro(token, user.id);
+
+  const debug = {
+    userId: user.id,
+    isPro: proCheck.isPro,
+    proReason: proCheck.reason,
+    hasDeepgramKey: !!process.env.DEEPGRAM_API_KEY
+  };
 
   try {
-    if (isPro && process.env.DEEPGRAM_API_KEY) {
+    if (proCheck.isPro && process.env.DEEPGRAM_API_KEY) {
       try {
         const audioContent = await speakWithDeepgram(text, voiceHint);
-        res.status(200).json({ audioContent, provider: 'deepgram' });
+        res.status(200).json({ audioContent, provider: 'deepgram', debug });
         return;
       } catch (deepgramErr) {
         // Don't let a Deepgram outage/error break the call for a paying
         // user — fall back to Google rather than surfacing an error.
-        console.error('Deepgram TTS failed, falling back to Google:', deepgramErr.message);
+        debug.deepgramError = deepgramErr.message;
       }
+    } else {
+      debug.skippedDeepgramBecause = !proCheck.isPro ? 'not Pro' : 'no DEEPGRAM_API_KEY';
     }
 
     if (!process.env.GOOGLE_TTS_API_KEY) {
-      res.status(500).json({ error: 'Server is missing GOOGLE_TTS_API_KEY. Set it in your Vercel project settings.' });
+      res.status(500).json({ error: 'Server is missing GOOGLE_TTS_API_KEY. Set it in your Vercel project settings.', debug });
       return;
     }
     const audioContent = await speakWithGoogleServer(text, voiceHint, speakingRate);
-    res.status(200).json({ audioContent, provider: 'google' });
+    res.status(200).json({ audioContent, provider: 'google', debug });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, debug });
   }
 };
 
@@ -71,8 +85,12 @@ async function verifySupabaseUser(req) {
 // Reads plan/plan_renews_at/free_access for this user directly from
 // Supabase's REST API, using their own token — RLS restricts this to
 // exactly their own row, so there's no way to query anyone else's status.
+// Returns { isPro, reason } — reason is included for debugging.
 async function checkIsPro(token, userId) {
-  if (!token || !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return false;
+  if (!token) return { isPro: false, reason: 'no token' };
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    return { isPro: false, reason: 'missing SUPABASE_URL/SUPABASE_ANON_KEY on server' };
+  }
 
   try {
     const response = await fetch(
@@ -84,16 +102,21 @@ async function checkIsPro(token, userId) {
         }
       }
     );
-    if (!response.ok) return false;
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      return { isPro: false, reason: `Supabase query failed: ${response.status} ${body.slice(0,150)}` };
+    }
     const rows = await response.json();
     const row = rows && rows[0];
-    if (!row) return false;
-    if (row.free_access) return true;
-    if (row.plan === 'pro') return true;
-    if (row.plan_renews_at && new Date(row.plan_renews_at) > new Date()) return true;
-    return false;
+    if (!row) return { isPro: false, reason: 'no profiles row returned for this user' };
+    if (row.free_access) return { isPro: true, reason: 'free_access=true' };
+    if (row.plan === 'pro') return { isPro: true, reason: "plan='pro'" };
+    if (row.plan_renews_at && new Date(row.plan_renews_at) > new Date()) {
+      return { isPro: true, reason: 'plan_renews_at in the future' };
+    }
+    return { isPro: false, reason: `plan='${row.plan}', free_access=${row.free_access}, plan_renews_at=${row.plan_renews_at}` };
   } catch (e) {
-    return false;
+    return { isPro: false, reason: 'exception: ' + e.message };
   }
 }
 
