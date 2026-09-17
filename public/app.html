@@ -1749,15 +1749,21 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
   addLine('you', text);
   setOrb('thinking','thinking…');
   try{
-    const result = await getProspectTurn(text, toneDescriptor, opts.interrupted);
+    // Patience used for speaking-rate purposes is computed *after* we know
+    // the delta, so estimate with current patience — close enough, and the
+    // combined endpoint doesn't know the delta until Claude responds anyway.
+    const beforePatience = state.patience;
+    const { result, audioBlob } = await getProspectTurnWithAudio(
+      text, toneDescriptor, opts.interrupted, state.persona.voiceHint,
+      computeSpeakingRate(beforePatience)
+    );
     state.patience = Math.max(0, Math.min(100, state.patience + (result.patience_delta||0)));
     updatePatienceUI();
     addLine('prospect', result.speech);
     setOrb('speaking','speaking');
     prospectSpeaking = true;
     setMicEnabled(true); // mic stays live during speech so you can barge in
-    const speakingRate = computeSpeakingRate(state.patience, { hangup: result.hangup, won: result.won });
-    await speak(result.speech, state.persona.voiceHint, speakingRate);
+    await speakBlob(audioBlob);
     prospectSpeaking = false;
 
     if (result.hangup){ state.outcome = 'hangup'; finishCall(); return; }
@@ -1772,8 +1778,16 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
     setMicEnabled(true);
   }
 }
+  }catch(err){
+    console.error(err);
+    prospectSpeaking = false;
+    addLine('system', friendlyError(err.message));
+    setOrb('idle','your turn — talk or type');
+    setMicEnabled(true);
+  }
+}
 
-async function getProspectTurn(latestUserText, toneDescriptor, wasInterrupted){
+async function getProspectTurnWithAudio(latestUserText, toneDescriptor, wasInterrupted, voiceHint, speakingRate){
   const p = state.persona;
   const toneLine = toneDescriptor
     ? `\n- The caller's vocal delivery on that last line came across as: ${toneDescriptor}. This is inferred from their voice (volume, pitch variation, pace) — not certain, and not the same as understanding emotion — so weigh it alongside their actual words rather than reacting to it alone. As a rough guide: flat/quiet delivery can read as low confidence, disinterest, or nerves; loud/fast/monotone can read as pushy or rehearsed; warm and normal-paced reads as more trustworthy. Never mention that you're analyzing their voice or tone — just let it color your reaction the way it naturally would for a real person on the phone.`
@@ -1806,14 +1820,57 @@ SPEECH TEXTURE — real people are not fluent on cold calls. Weave these in natu
     .map(h=>({role: h.speaker==='you' ? 'user':'assistant', content: h.text}));
 
   const token = await getAccessToken();
-  const response = await fetch("/api/prospect-turn",{
+  const response = await fetch("/api/turn",{
     method:"POST",
     headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-    body: JSON.stringify({ system, messages })
+    body: JSON.stringify({ system, messages, voiceHint, speakingRate })
   });
-  const data = await response.json().catch(()=>({}));
-  if (!response.ok){ throw new Error(data.error || `Server error ${response.status}`); }
-  return data;
+
+  if (!response.ok){
+    const data = await response.json().catch(()=>({}));
+    throw new Error(data.error || `Server error ${response.status}`);
+  }
+
+  const result = {
+    speech: decodeURIComponent(response.headers.get('X-Speech') || ''),
+    patience_delta: parseInt(response.headers.get('X-Patience-Delta') || '0', 10),
+    hangup: response.headers.get('X-Hangup') === 'true',
+    won: response.headers.get('X-Won') === 'true'
+  };
+  const format = response.headers.get('X-Format') === 'wav' ? 'audio/wav' : 'audio/mpeg';
+  const arrayBuffer = await response.arrayBuffer();
+  const audioBlob = new Blob([arrayBuffer], { type: format });
+
+  return { result, audioBlob };
+}
+
+// Plays a Blob directly via an object URL — no base64 anywhere in this path.
+function speakBlob(blob){
+  const attempt = new Promise((resolve, reject)=>{
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    currentAudio = audio;
+    let settled = false;
+    const finish = (fn) => {
+      if (!settled){
+        settled = true;
+        if (currentAudio === audio) currentAudio = null;
+        URL.revokeObjectURL(url);
+        fn();
+      }
+    };
+    audio.onended = () => finish(resolve);
+    audio.onerror = () => finish(() => reject(new Error('Audio playback failed')));
+    setTimeout(() => finish(resolve), 15000);
+    audio.play().catch(() => finish(() => reject(new Error('Audio playback failed'))));
+  });
+
+  return new Promise((resolve)=>{
+    let settled = false;
+    const finish = () => { if (!settled){ settled = true; ttsCancelResolve = null; resolve(); } };
+    ttsCancelResolve = finish;
+    withTimeout(attempt, 20000).then(finish);
+  });
 }
 
 // ---------- TTS ----------
