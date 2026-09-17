@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
     if (proCheck.isPro && process.env.DEEPGRAM_API_KEY) {
       try {
         const audioContent = await speakWithDeepgram(text, voiceHint);
-        res.status(200).json({ audioContent, provider: 'deepgram', debug });
+        res.status(200).json({ audioContent, provider: 'deepgram', format: 'wav', debug });
         return;
       } catch (deepgramErr) {
         // Don't let a Deepgram outage/error break the call for a paying
@@ -57,7 +57,7 @@ module.exports = async (req, res) => {
       return;
     }
     const audioContent = await speakWithGoogleServer(text, voiceHint, speakingRate);
-    res.status(200).json({ audioContent, provider: 'google', debug });
+    res.status(200).json({ audioContent, provider: 'google', format: 'mp3', debug });
   } catch (err) {
     res.status(500).json({ error: err.message, debug });
   }
@@ -122,8 +122,12 @@ async function checkIsPro(token, userId) {
 
 async function speakWithDeepgram(text, voiceHint) {
   const model = voiceHint === 'male' ? 'aura-2-arcas-en' : 'aura-2-asteria-en';
+  // WAV (linear16 + container=wav) instead of raw mp3 — WAV's header states
+  // the exact byte length up front, which avoids the start/end clipping
+  // that raw MP3 streams can suffer when embedded directly as a data URI
+  // with no external framing/duration info for the browser to rely on.
   const response = await fetch(
-    `https://api.deepgram.com/v1/speak?model=${model}&encoding=mp3`,
+    `https://api.deepgram.com/v1/speak?model=${model}&encoding=linear16&sample_rate=24000&container=wav`,
     {
       method: 'POST',
       headers: {
