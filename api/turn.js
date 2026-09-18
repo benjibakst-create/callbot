@@ -1,13 +1,19 @@
-// Serverless function (runs on Vercel). Combines the prospect's next line
-// (Claude) and its spoken audio (Deepgram/Google) into a single request —
-// cuts one full network round trip off every turn versus calling
-// /api/prospect-turn then /api/tts separately.
+// Serverless function (Vercel, Node runtime). Two-phase design to cut
+// perceived latency without giving up forced-JSON reliability:
 //
-// To avoid the overhead of base64-encoding audio into JSON, the small
-// structured fields (speech text, patience change, hangup/won) travel as
-// response headers, and the raw audio bytes are the response body directly.
-// On success: status 200, headers carry metadata, body is the audio file.
-// On failure: status 4xx/5xx, a normal JSON { error } body (no headers/audio).
+//   phase: 'opener'   -> Claude generates ONLY the prospect's first
+//                        reaction line (small maxTokens = fast),
+//                        synthesized to audio and returned immediately
+//                        so the user hears something in well under a
+//                        second.
+//   phase: 'continue' -> Claude generates whatever comes AFTER the
+//                        opener (can be empty) plus patience/hangup/won,
+//                        synthesized to audio and returned separately.
+//
+// The frontend calls 'opener' first, plays that audio right away, and
+// fires 'continue' immediately after (NOT waiting for opener playback
+// to finish) so the two Claude calls + two TTS calls happen back to
+// back instead of one big call chain blocking all the way through.
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -20,47 +26,59 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const { system, messages, voiceHint, speakingRate } = req.body || {};
-  if (!system || !messages) {
-    res.status(400).json({ error: 'Missing system or messages in request body' });
+  const { phase, system, messages, opener, voiceHint, speakingRate } = req.body || {};
+  if (!phase || !system || !messages) {
+    res.status(400).json({ error: 'Missing phase, system, or messages in request body' });
+    return;
+  }
+  if (phase !== 'opener' && phase !== 'continue') {
+    res.status(400).json({ error: "phase must be 'opener' or 'continue'" });
+    return;
+  }
+  if (phase === 'continue' && typeof opener !== 'string') {
+    res.status(400).json({ error: "phase 'continue' requires the 'opener' text from the previous call" });
     return;
   }
 
-  const tool = {
-    name: 'prospect_turn',
-    description: "The prospect's next spoken line and how the call state changes as a result.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        speech: { type: 'string', description: 'What the prospect says out loud, 1-3 short natural spoken sentences.' },
-        patience_delta: { type: 'integer', description: 'How much the patience score changes this turn, from -25 to 15.' },
-        hangup: { type: 'boolean', description: 'True if the prospect hangs up on this turn.' },
-        won: { type: 'boolean', description: 'True if the prospect agrees to a next step (meeting, demo, callback) on this turn.' }
-      },
-      required: ['speech', 'patience_delta', 'hangup', 'won']
-    }
-  };
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  const proCheck = await checkIsPro(token, user.id);
 
-  let result;
   const t0 = Date.now();
+  let result;
   try {
-    result = await callClaudeTool({ system, messages, maxTokens: 500, tool });
+    result = phase === 'opener'
+      ? await getOpener({ system, messages })
+      : await getContinuation({ system, messages, opener });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
     return;
   }
   const claudeMs = Date.now() - t0;
 
-  const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  const proCheck = await checkIsPro(token, user.id);
+  const textToSpeak = phase === 'opener' ? result.opener : result.continuation;
+
+  // Continuation can legitimately be empty (opener said it all) — skip
+  // TTS entirely rather than synthesizing silence.
+  if (phase === 'continue' && !textToSpeak) {
+    res.setHeader('X-Speech', '');
+    res.setHeader('X-Empty', 'true');
+    res.setHeader('X-Patience-Delta', String(result.patience_delta || 0));
+    res.setHeader('X-Hangup', result.hangup ? 'true' : 'false');
+    res.setHeader('X-Won', result.won ? 'true' : 'false');
+    res.setHeader('X-Timing-Claude-Ms', String(claudeMs));
+    res.setHeader('X-Timing-Tts-Ms', '0');
+    res.setHeader('X-Timing-Total-Ms', String(Date.now() - t0));
+    res.status(200).send(Buffer.alloc(0));
+    return;
+  }
 
   let audioBuffer, format, provider;
   const t1 = Date.now();
   try {
     if (proCheck.isPro && process.env.DEEPGRAM_API_KEY) {
       try {
-        audioBuffer = await speakWithDeepgram(result.speech, voiceHint);
+        audioBuffer = await speakWithDeepgram(textToSpeak, voiceHint);
         format = 'wav';
         provider = 'deepgram';
       } catch (deepgramErr) {
@@ -72,7 +90,7 @@ module.exports = async (req, res) => {
         res.status(500).json({ error: 'Server is missing GOOGLE_TTS_API_KEY.' });
         return;
       }
-      audioBuffer = await speakWithGoogleServer(result.speech, voiceHint, speakingRate);
+      audioBuffer = await speakWithGoogleServer(textToSpeak, voiceHint, speakingRate);
       format = 'mp3';
       provider = 'google';
     }
@@ -82,20 +100,91 @@ module.exports = async (req, res) => {
   }
   const ttsMs = Date.now() - t1;
 
-  res.setHeader('X-Speech', encodeURIComponent(result.speech));
-  res.setHeader('X-Patience-Delta', String(result.patience_delta || 0));
-  res.setHeader('X-Hangup', result.hangup ? 'true' : 'false');
-  res.setHeader('X-Won', result.won ? 'true' : 'false');
+  res.setHeader('X-Speech', encodeURIComponent(textToSpeak));
+  res.setHeader('X-Empty', 'false');
+  if (phase === 'continue') {
+    res.setHeader('X-Patience-Delta', String(result.patience_delta || 0));
+    res.setHeader('X-Hangup', result.hangup ? 'true' : 'false');
+    res.setHeader('X-Won', result.won ? 'true' : 'false');
+  }
   res.setHeader('X-Provider', provider);
   res.setHeader('X-Format', format);
-  // Temporary: timing breakdown so we can see where time is actually going,
-  // visible in the browser's Network tab under Response Headers.
   res.setHeader('X-Timing-Claude-Ms', String(claudeMs));
-  res.setHeader('X-Timing-TTS-Ms', String(ttsMs));
+  res.setHeader('X-Timing-Tts-Ms', String(ttsMs));
   res.setHeader('X-Timing-Total-Ms', String(Date.now() - t0));
   res.setHeader('Content-Type', format === 'wav' ? 'audio/wav' : 'audio/mpeg');
   res.status(200).send(audioBuffer);
 };
+
+async function getOpener({ system, messages }) {
+  const tool = {
+    name: 'opening_line',
+    description: "The prospect's very first spoken reaction, as fast and short as possible.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        opener: { type: 'string', description: 'ONE short natural spoken sentence — just the immediate gut reaction, not the full response.' }
+      },
+      required: ['opener']
+    }
+  };
+  const openerSystem = `${system}
+
+Give ONLY the prospect's immediate, gut-reaction opening line (one short sentence). Don't resolve the whole exchange yet — a fuller continuation will be requested separately right after.`;
+  return callClaudeTool({ system: openerSystem, messages, maxTokens: 100, tool });
+}
+
+async function getContinuation({ system, messages, opener }) {
+  const tool = {
+    name: 'continue_turn',
+    description: 'What the prospect says right after their opening line (can be empty), plus how the call state changes.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        continuation: { type: 'string', description: 'What the prospect says immediately after their opener, 0-2 short natural spoken sentences. Empty string if the opener already fully covered their reaction.' },
+        patience_delta: { type: 'integer', description: 'How much the patience score changes this turn, from -25 to 15.' },
+        hangup: { type: 'boolean', description: 'True if the prospect hangs up on this turn.' },
+        won: { type: 'boolean', description: 'True if the prospect agrees to a next step (meeting, demo, callback) on this turn.' }
+      },
+      required: ['continuation', 'patience_delta', 'hangup', 'won']
+    }
+  };
+  const continueSystem = `${system}
+
+The prospect has already said this opening line out loud: "${opener}"
+Now provide whatever comes next (can be nothing) plus the turn's metadata.`;
+  return callClaudeTool({ system: continueSystem, messages, maxTokens: 400, tool });
+}
+
+async function callClaudeTool({ system, messages, maxTokens, tool }) {
+  let lastError = 'no response';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: maxTokens,
+        system,
+        messages,
+        tools: [tool],
+        tool_choice: { type: 'tool', name: tool.name }
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw { status: response.status, message: data.error?.message || 'Anthropic API error' };
+    }
+    const toolBlock = (data.content || []).find(b => b.type === 'tool_use' && b.name === tool.name);
+    if (toolBlock && toolBlock.input) return toolBlock.input;
+    lastError = 'Model did not return a structured reply.';
+  }
+  throw { status: 502, message: lastError };
+}
 
 async function verifySupabaseUser(req) {
   const authHeader = req.headers['authorization'] || '';
@@ -130,36 +219,6 @@ async function checkIsPro(token, userId) {
   } catch (e) {
     return { isPro: false };
   }
-}
-
-async function callClaudeTool({ system, messages, maxTokens, tool }) {
-  let lastError = 'no response';
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: maxTokens,
-        system,
-        messages,
-        tools: [tool],
-        tool_choice: { type: 'tool', name: tool.name }
-      })
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw { status: response.status, message: data.error?.message || 'Anthropic API error' };
-    }
-    const toolBlock = (data.content || []).find(b => b.type === 'tool_use' && b.name === tool.name);
-    if (toolBlock && toolBlock.input) return toolBlock.input;
-    lastError = 'Model did not return a structured reply.';
-  }
-  throw { status: 502, message: lastError };
 }
 
 async function speakWithDeepgram(text, voiceHint) {
