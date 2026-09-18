@@ -1473,6 +1473,21 @@ function addLine(speaker, text){
   div.querySelector('p').textContent = text;
   t.appendChild(div);
   t.scrollTop = t.scrollHeight;
+  return div;
+}
+
+// Appends more text to the most recently added transcript line (used to
+// merge the 'continue' phase's text into the same bubble as the 'opener'
+// phase, so the two-call split is invisible in the transcript) and keeps
+// state.history in sync so saved transcripts read as one line, not two.
+function appendToLastLine(div, moreText){
+  if (!moreText) return;
+  const last = state.history[state.history.length - 1];
+  if (last) last.text = (last.text + ' ' + moreText).trim();
+  const p = div.querySelector('p');
+  p.textContent = (p.textContent + ' ' + moreText).trim();
+  const t = document.getElementById('transcript');
+  t.scrollTop = t.scrollHeight;
 }
 
 function updatePatienceUI(){
@@ -1749,25 +1764,46 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
   addLine('you', text);
   setOrb('thinking','thinking…');
   try{
-    // Patience used for speaking-rate purposes is computed *after* we know
-    // the delta, so estimate with current patience — close enough, and the
-    // combined endpoint doesn't know the delta until Claude responds anyway.
+    const p = state.persona;
     const beforePatience = state.patience;
-    const { result, audioBlob } = await getProspectTurnWithAudio(
-      text, toneDescriptor, opts.interrupted, state.persona.voiceHint,
-      computeSpeakingRate(beforePatience)
-    );
-    state.patience = Math.max(0, Math.min(100, state.patience + (result.patience_delta||0)));
-    updatePatienceUI();
-    addLine('prospect', result.speech);
+    const system = buildProspectSystemPrompt(text, toneDescriptor, opts.interrupted);
+    const messages = state.history
+      .filter(h=>h.speaker==='you' || h.speaker==='prospect')
+      .map(h=>({role: h.speaker==='you' ? 'user':'assistant', content: h.text}));
+    const token = await getAccessToken();
+
+    // Phase 1: opener — small/fast call, first audio should land quickly.
+    const openerResp = await callTurnAPI('opener', {
+      token, system, messages, voiceHint: p.voiceHint, speakingRate: computeSpeakingRate(beforePatience)
+    });
+
+    const lineDiv = addLine('prospect', openerResp.speech);
     setOrb('speaking','speaking');
     prospectSpeaking = true;
     setMicEnabled(true); // mic stays live during speech so you can barge in
-    await speakBlob(audioBlob);
+
+    // Phase 2: fired immediately, NOT awaited yet — it runs in the
+    // background while the opener's audio plays, so by the time the
+    // opener finishes, the continuation is usually already back.
+    const continuePromise = callTurnAPI('continue', {
+      token, system, messages, opener: openerResp.speech,
+      voiceHint: p.voiceHint, speakingRate: computeSpeakingRate(beforePatience)
+    });
+
+    await speakBlob(openerResp.audioBlob);
+
+    const continueResp = await continuePromise;
+    if (!continueResp.empty && continueResp.speech){
+      appendToLastLine(lineDiv, continueResp.speech);
+      await speakBlob(continueResp.audioBlob);
+    }
     prospectSpeaking = false;
 
-    if (result.hangup){ state.outcome = 'hangup'; finishCall(); return; }
-    if (result.won){ state.outcome = 'win'; finishCall(); return; }
+    state.patience = Math.max(0, Math.min(100, state.patience + (continueResp.patience_delta||0)));
+    updatePatienceUI();
+
+    if (continueResp.hangup){ state.outcome = 'hangup'; finishCall(); return; }
+    if (continueResp.won){ state.outcome = 'win'; finishCall(); return; }
     setOrb('idle','your turn — talk or type');
     setMicEnabled(true);
   }catch(err){
@@ -1778,8 +1814,8 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
     setMicEnabled(true);
   }
 }
- 
-async function getProspectTurnWithAudio(latestUserText, toneDescriptor, wasInterrupted, voiceHint, speakingRate){
+
+function buildProspectSystemPrompt(latestUserText, toneDescriptor, wasInterrupted){
   const p = state.persona;
   const toneLine = toneDescriptor
     ? `\n- The caller's vocal delivery on that last line came across as: ${toneDescriptor}. This is inferred from their voice (volume, pitch variation, pace) — not certain, and not the same as understanding emotion — so weigh it alongside their actual words rather than reacting to it alone. As a rough guide: flat/quiet delivery can read as low confidence, disinterest, or nerves; loud/fast/monotone can read as pushy or rehearsed; warm and normal-paced reads as more trustworthy. Never mention that you're analyzing their voice or tone — just let it color your reaction the way it naturally would for a real person on the phone.`
@@ -1787,7 +1823,7 @@ async function getProspectTurnWithAudio(latestUserText, toneDescriptor, wasInter
   const interruptLine = wasInterrupted
     ? `\n- IMPORTANT: You are cutting the caller off mid-sentence right now — the text above is where you interrupted them, it's not their finished thought. Your "speech" should read like a real interruption: open like you're breaking in ("Okay, look—", "Hold on, stop—", "Yeah, I'm going to stop you there—", "Whoa, whoa—") and keep it short and abrupt. This should land as ruder and more clipped than your normal response at this patience level.`
     : '';
-  const system = `You are roleplaying as ${p.name}, ${p.role}, who has just picked up an unexpected cold sales call. This is for a sales training simulator.
+  return `You are roleplaying as ${p.name}, ${p.role}, who has just picked up an unexpected cold sales call. This is for a sales training simulator.
 
 PERSONALITY: ${p.personality}
 
@@ -1795,10 +1831,10 @@ RULES:
 - Stay completely in character. Never break character, never mention this is a simulation.
 - Speak the way a real person talks on the phone: short, natural, sometimes clipped. Contractions. No corporate language.
 - Current patience: ${state.patience}/100. Patience drops when the caller is vague, pushy, ignores what you said, monologues, or gives a weak/generic pitch. It rises when they're clear, specific, respectful of your time, and relevant.
-- If patience is about to hit 0, end the call abruptly — make "speech" a realistic hang-up line (e.g. "I really have to go, sorry" or just "I'm going to let you go, take care") and set hangup:true.
-- If the caller earns a real next step (you agree to a meeting, demo, or callback) AND patience is above 55, you may agree to it — set won:true and make "speech" your agreement line.
+- If patience is about to hit 0, end the call abruptly — make your speech a realistic hang-up line (e.g. "I really have to go, sorry" or just "I'm going to let you go, take care") and set hangup:true.
+- If the caller earns a real next step (you agree to a meeting, demo, or callback) AND patience is above 55, you may agree to it — set won:true and make your speech your agreement line.
 - Otherwise keep the call going naturally: react, ask a question, raise a realistic objection, or push back — set hangup:false and won:false.
-- Keep "speech" to 1-3 short sentences, like real phone dialogue.${toneLine}${interruptLine}
+- Keep your full response to 1-3 short sentences total, like real phone dialogue.${toneLine}${interruptLine}
 
 SPEECH TEXTURE — real people are not fluent on cold calls. Weave these in naturally (don't overdo it — one or two touches per line is plenty, not every sentence):
 - Sprinkle in natural fillers and hedges where a real person would pause to think or soften something: "um," "uh," "look," "honestly," "I mean," "yeah, so." Use these sparingly and only where they'd actually land — not as a tic on every line.
@@ -1806,16 +1842,21 @@ SPEECH TEXTURE — real people are not fluent on cold calls. Weave these in natu
 - Tie your fluency to patience: the higher your patience, the more complete and polite your sentences are. As patience drops, get progressively curter — shorter fragments, less politeness, more clipped one-liners ("Not interested." / "Yeah, no." / "Can't do it."). Below roughly 25 patience you should sound almost done with the conversation.
 - Occasionally (not often — maybe 1 in 6-8 turns, and only when it fits) ask the caller to repeat or clarify something, the way a distracted or half-listening person would: "Sorry, what was that?" / "Say that again?" / "You cut out for a second, what?"
 - Never let these textures make you harder to understand or turn into a caricature — they should read like a real, slightly distracted or impatient human, not a parody of one.`;
+}
 
-  const messages = state.history
-    .filter(h=>h.speaker==='you' || h.speaker==='prospect')
-    .map(h=>({role: h.speaker==='you' ? 'user':'assistant', content: h.text}));
+// Calls /api/turn for one phase ('opener' or 'continue') and returns a
+// normalized shape regardless of phase: { speech, empty, patience_delta,
+// hangup, won, audioBlob }. 'opener' responses never carry metadata
+// (patience_delta/hangup/won default to falsy/0) since that only resolves
+// once the 'continue' phase comes back.
+async function callTurnAPI(phase, { token, system, messages, opener, voiceHint, speakingRate }){
+  const body = { phase, system, messages, voiceHint, speakingRate };
+  if (phase === 'continue') body.opener = opener;
 
-  const token = await getAccessToken();
   const response = await fetch("/api/turn",{
     method:"POST",
     headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-    body: JSON.stringify({ system, messages, voiceHint, speakingRate })
+    body: JSON.stringify(body)
   });
 
   if (!response.ok){
@@ -1823,21 +1864,25 @@ SPEECH TEXTURE — real people are not fluent on cold calls. Weave these in natu
     throw new Error(data.error || `Server error ${response.status}`);
   }
 
-  const result = {
-    speech: decodeURIComponent(response.headers.get('X-Speech') || ''),
-    patience_delta: parseInt(response.headers.get('X-Patience-Delta') || '0', 10),
-    hangup: response.headers.get('X-Hangup') === 'true',
-    won: response.headers.get('X-Won') === 'true'
-  };
+  const empty = response.headers.get('X-Empty') === 'true';
+  const speech = decodeURIComponent(response.headers.get('X-Speech') || '');
+  const patience_delta = parseInt(response.headers.get('X-Patience-Delta') || '0', 10);
+  const hangup = response.headers.get('X-Hangup') === 'true';
+  const won = response.headers.get('X-Won') === 'true';
   const format = response.headers.get('X-Format') === 'wav' ? 'audio/wav' : 'audio/mpeg';
-  const arrayBuffer = await response.arrayBuffer();
-  const audioBlob = new Blob([arrayBuffer], { type: format });
 
-  return { result, audioBlob };
+  let audioBlob = null;
+  if (!empty){
+    const arrayBuffer = await response.arrayBuffer();
+    audioBlob = new Blob([arrayBuffer], { type: format });
+  }
+
+  return { speech, empty, patience_delta, hangup, won, audioBlob };
 }
 
 // Plays a Blob directly via an object URL — no base64 anywhere in this path.
 function speakBlob(blob){
+  if (!blob) return Promise.resolve();
   const attempt = new Promise((resolve, reject)=>{
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
