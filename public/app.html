@@ -1772,38 +1772,36 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
       .map(h=>({role: h.speaker==='you' ? 'user':'assistant', content: h.text}));
     const token = await getAccessToken();
 
-    // Phase 1: opener — small/fast call, first audio should land quickly.
-    const openerResp = await callTurnAPI('opener', {
-      token, system, messages, voiceHint: p.voiceHint, speakingRate: computeSpeakingRate(beforePatience)
+    const response = await fetch("/api/turn",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
+      body: JSON.stringify({ system, messages, voiceHint: p.voiceHint, speakingRate: computeSpeakingRate(beforePatience) })
     });
 
-    const lineDiv = addLine('prospect', openerResp.speech);
+    if (!response.ok){
+      const data = await response.json().catch(()=>({}));
+      throw new Error(data.error || `Server error ${response.status}`);
+    }
+
+    const speech = decodeURIComponent(response.headers.get('X-Speech') || '');
+    const patience_delta = parseInt(response.headers.get('X-Patience-Delta') || '0', 10);
+    const hangup = response.headers.get('X-Hangup') === 'true';
+    const won = response.headers.get('X-Won') === 'true';
+    const format = response.headers.get('X-Format') === 'wav' ? 'audio/wav' : 'audio/mpeg';
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBlob = new Blob([arrayBuffer], { type: format });
+
+    state.patience = Math.max(0, Math.min(100, state.patience + (patience_delta||0)));
+    updatePatienceUI();
+    addLine('prospect', speech);
     setOrb('speaking','speaking');
     prospectSpeaking = true;
     setMicEnabled(true); // mic stays live during speech so you can barge in
-
-    // Phase 2: fired immediately, NOT awaited yet — it runs in the
-    // background while the opener's audio plays, so by the time the
-    // opener finishes, the continuation is usually already back.
-    const continuePromise = callTurnAPI('continue', {
-      token, system, messages, opener: openerResp.speech,
-      voiceHint: p.voiceHint, speakingRate: computeSpeakingRate(beforePatience)
-    });
-
-    await speakBlob(openerResp.audioBlob);
-
-    const continueResp = await continuePromise;
-    if (!continueResp.empty && continueResp.speech){
-      appendToLastLine(lineDiv, continueResp.speech);
-      await speakBlob(continueResp.audioBlob);
-    }
+    await speakBlob(audioBlob);
     prospectSpeaking = false;
 
-    state.patience = Math.max(0, Math.min(100, state.patience + (continueResp.patience_delta||0)));
-    updatePatienceUI();
-
-    if (continueResp.hangup){ state.outcome = 'hangup'; finishCall(); return; }
-    if (continueResp.won){ state.outcome = 'win'; finishCall(); return; }
+    if (hangup){ state.outcome = 'hangup'; finishCall(); return; }
+    if (won){ state.outcome = 'win'; finishCall(); return; }
     setOrb('idle','your turn — talk or type');
     setMicEnabled(true);
   }catch(err){
