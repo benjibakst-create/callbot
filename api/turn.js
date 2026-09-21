@@ -100,7 +100,12 @@ async function callClaudeTool({ system, messages, maxTokens, tool }) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-5',
+        // Haiku instead of Sonnet for this specific call — a 1-3 sentence
+        // roleplay reply is a short, low-complexity generation, so this is
+        // a reasonable place to trade a little nuance for speed. If replies
+        // start feeling noticeably flatter or less sharp, swap this back to
+        // 'claude-sonnet-5'.
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: maxTokens,
         system,
         messages,
