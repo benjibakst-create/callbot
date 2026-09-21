@@ -38,7 +38,7 @@ module.exports = async (req, res) => {
   let result;
   const t0 = Date.now();
   try {
-    result = await callClaudeTool({ system, messages, maxTokens: 500, tool });
+    result = await callClaudeTool({ system, messages, maxTokens: 200, tool });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
     return;
