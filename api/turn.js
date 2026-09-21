@@ -156,19 +156,41 @@ async function checkIsPro(token, userId) {
 
 async function speakWithDeepgram(text, voiceHint) {
   const model = voiceHint === 'male' ? 'aura-2-arcas-en' : 'aura-2-asteria-en';
-  const response = await fetch(
-    `https://api.deepgram.com/v1/speak?model=${model}&encoding=linear16&sample_rate=24000&container=wav`,
-    {
-      method: 'POST',
-      headers: { 'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+  let lastErr;
+  // Two attempts total: if the first one times out (Deepgram hanging, not
+  // erroring), retry once before letting this bubble up and fall back to
+  // Google. A hard error (bad response, non-timeout) is NOT retried here —
+  // it goes straight to the existing fallback, since retrying a real error
+  // is unlikely to help and just adds latency.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch(
+        `https://api.deepgram.com/v1/speak?model=${model}&encoding=linear16&sample_rate=24000&container=wav`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+          signal: controller.signal
+        }
+      );
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`Deepgram API ${response.status}: ${errBody.slice(0, 200)}`);
+      }
+      return Buffer.from(await response.arrayBuffer());
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        lastErr = new Error('Deepgram request timed out after 4s');
+        continue; // retry once on timeout specifically
+      }
+      throw err; // hard error — no retry, fall back to Google immediately
     }
-  );
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    throw new Error(`Deepgram API ${response.status}: ${errBody.slice(0, 200)}`);
   }
-  return Buffer.from(await response.arrayBuffer());
+  throw lastErr; // both attempts timed out
 }
 
 async function speakWithGoogleServer(text, voiceHint, speakingRate) {
