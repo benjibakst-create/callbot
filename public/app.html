@@ -1842,42 +1842,6 @@ SPEECH TEXTURE — real people are not fluent on cold calls. Weave these in natu
 - Never let these textures make you harder to understand or turn into a caricature — they should read like a real, slightly distracted or impatient human, not a parody of one.`;
 }
 
-// Calls /api/turn for one phase ('opener' or 'continue') and returns a
-// normalized shape regardless of phase: { speech, empty, patience_delta,
-// hangup, won, audioBlob }. 'opener' responses never carry metadata
-// (patience_delta/hangup/won default to falsy/0) since that only resolves
-// once the 'continue' phase comes back.
-async function callTurnAPI(phase, { token, system, messages, opener, voiceHint, speakingRate }){
-  const body = { phase, system, messages, voiceHint, speakingRate };
-  if (phase === 'continue') body.opener = opener;
-
-  const response = await fetch("/api/turn",{
-    method:"POST",
-    headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok){
-    const data = await response.json().catch(()=>({}));
-    throw new Error(data.error || `Server error ${response.status}`);
-  }
-
-  const empty = response.headers.get('X-Empty') === 'true';
-  const speech = decodeURIComponent(response.headers.get('X-Speech') || '');
-  const patience_delta = parseInt(response.headers.get('X-Patience-Delta') || '0', 10);
-  const hangup = response.headers.get('X-Hangup') === 'true';
-  const won = response.headers.get('X-Won') === 'true';
-  const format = response.headers.get('X-Format') === 'wav' ? 'audio/wav' : 'audio/mpeg';
-
-  let audioBlob = null;
-  if (!empty){
-    const arrayBuffer = await response.arrayBuffer();
-    audioBlob = new Blob([arrayBuffer], { type: format });
-  }
-
-  return { speech, empty, patience_delta, hangup, won, audioBlob };
-}
-
 // Plays a Blob directly via an object URL — no base64 anywhere in this path.
 function speakBlob(blob){
   if (!blob) return Promise.resolve();
