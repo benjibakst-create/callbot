@@ -748,7 +748,7 @@ const SUPABASE_URL = 'https://ittbuxgnqwupjzwtnicj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0dGJ1eGducXd1cGp6d3RuaWNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5MzAxMjEsImV4cCI6MjEwMjUwNjEyMX0.DLIBeN-9mkOMWS285_5ORRode2Q84z1CJKOR3Cy3X_k';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function usernameToEmail(username){
+
   return username.toLowerCase() + '@dialin.local';
 }
 
@@ -821,7 +821,7 @@ async function fetchSharedPersonas(){
   }));
 }
 
-function getAllPersonas(){
+
   return [...BUILTIN_PERSONAS, ...SHARED_PERSONAS];
 }
 
@@ -891,7 +891,8 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
         showAuthError('Sign-up succeeded but no session was returned — check that "Confirm email" is disabled in your Supabase Auth settings.');
         return;
       }
-      await sb.from('profiles').insert({ id: data.user.id, username, email });
+      const { error: profErr } = await sb.from('profiles').insert({ id: data.user.id, username, email });
+      if (profErr) throw profErr;
       currentUser = { id: data.user.id, username };
     } else {
       // The email column isn't readable by the browser at all (locked down
@@ -1178,6 +1179,7 @@ let ttsCancelResolve = null;
 let accumulatedFinal = '';
 let currentInterim = '';
 let pendingManualSubmit = false;
+let turnCounter = 0;
 
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(el=>el.classList.add('hidden'));
@@ -1187,7 +1189,8 @@ function showScreen(id){
   void el.offsetWidth;
   el.classList.add('screen');
   const hideNav = id === 'auth-screen' || id === 'call-screen' || id === 'forgot-screen' || id === 'reset-screen'
-    || id === 'upgrade-screen' || id === 'checkout-pending-screen';
+  || id === 'upgrade-screen' || id === 'checkout-pending-screen' || id === 'ai-disclosure-screen';
+  || id === 'upgrade-screen' || id === 'checkout-pending-screen';
   document.getElementById('history-nav-btn').classList.toggle('hidden', hideNav);
   document.getElementById('upgrade-nav-btn').classList.toggle('hidden', hideNav || isPro());
 }
@@ -1478,6 +1481,7 @@ document.getElementById('disclosure-cancel').addEventListener('click', ()=> show
   state.outcome = null;
   state.timerSeconds = 0;
   interruptedFlag = false;
+  turnCounter = 0;
   prospectSpeaking = false;
 
   showScreen('call-screen');
@@ -1718,7 +1722,8 @@ if (recognition){
       }
     }
   };
-  recognition.onerror = ()=>{
+    recognition.onerror = (e)=>{
+    if (e && e.error === 'aborted') return;
     recognizing = false;
     pendingManualSubmit = false;
     document.getElementById('mic-btn').classList.remove('active');
@@ -1793,6 +1798,7 @@ document.getElementById('type-input').addEventListener('keydown', (e)=>{
 
 document.getElementById('end-btn').addEventListener('click', ()=>{
   if (state.ended) return;
+  const myTurn = ++turnCounter;
   state.outcome = 'end';
   finishCall();
 });
@@ -1843,6 +1849,7 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
     const won = response.headers.get('X-Won') === 'true';
     const format = response.headers.get('X-Format') === 'wav' ? 'audio/wav' : 'audio/mpeg';
     const arrayBuffer = await response.arrayBuffer();
+    if (state.ended) return;
     const audioBlob = new Blob([arrayBuffer], { type: format });
 
     state.patience = Math.max(0, Math.min(100, state.patience + (patience_delta||0)));
@@ -1853,9 +1860,11 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
     setMicEnabled(true); // mic stays live during speech so you can barge in
     await speakBlob(audioBlob);
     prospectSpeaking = false;
-
+    if (state.ended || turnCounter > 0 || recognizing) return;
+    if (state.ended) return;
     if (hangup){ state.outcome = 'hangup'; finishCall(); return; }
     if (won){ state.outcome = 'win'; finishCall(); return; }
+    if (myTurn !== turnCounter || recognizing) return; // user barged in
     setOrb('idle','your turn — talk or type');
     setMicEnabled(true);
   }catch(err){
@@ -2035,6 +2044,8 @@ function speakWithBrowser(text, voiceHint, rate){
 
 // ---------- END CALL / FEEDBACK ----------
 function finishCall(){
+  if (state.ended) return;
+  stopSpeaking();
   state.ended = true;
   clearInterval(state.timerInterval);
   if (recognition && recognizing){ try{ recognition.stop(); }catch(e){} }
