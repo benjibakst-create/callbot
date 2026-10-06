@@ -1,3 +1,25 @@
+// Checks and atomically increments a per-user request count in a sliding
+// window, via a Postgres function (so concurrent requests can't race past
+// the limit). Fails OPEN on error — a rate-limiter outage should never be
+// the thing that breaks the app for legitimate users.
+async function checkRateLimit(token, userId, limit, windowSeconds) {
+  try {
+    const response = await fetch(`${process.env.SUPABASE_URL}/rest/v1/rpc/check_and_increment_rate_limit`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'apikey': process.env.SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ p_user_id: userId, p_limit: limit, p_window_seconds: windowSeconds })
+    });
+    if (!response.ok) return true;
+    return (await response.json()) === true;
+  } catch (e) {
+    return true;
+  }
+}
+
 // Serverless function (runs on Vercel). Verifies the caller is a real
 // logged-in Supabase user before spending your Anthropic API budget.
 const { createClient } = require('@supabase/supabase-js');
