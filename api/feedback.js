@@ -23,6 +23,7 @@ async function checkRateLimit(token, userId, limit, windowSeconds) {
 // Serverless function (runs on Vercel). Verifies the caller is a real
 // logged-in Supabase user before spending your Anthropic API budget.
 const { createClient } = require('@supabase/supabase-js');
+const { loadPersona, buildFeedbackSystemPrompt } = require('./_prompts');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -49,11 +50,27 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const { system, transcript } = req.body || {};
-  if (!system || !transcript) {
-    res.status(400).json({ error: 'Missing system or transcript in request body' });
+    const withinLimit = await checkRateLimit(token, userData.user.id, 10, 60); // 10 debriefs/minute
+  if (!withinLimit) {
+    res.status(429).json({ error: "You're going a bit fast — try again in a moment." });
     return;
   }
+
+   const body = req.body || {};
+
+  const persona = await loadPersona(body.personaId, token);
+  if (!persona) {
+    res.status(400).json({ error: 'Unknown prospect.' });
+    return;
+  }
+
+  const outcome = ['win', 'hangup', 'end'].includes(body.outcome) ? body.outcome : 'end';
+  const transcript = typeof body.transcript === 'string' ? body.transcript.slice(0, 12000) : '';
+  if (!transcript) {
+    res.status(400).json({ error: 'Missing transcript.' });
+    return;
+  }
+  const system = buildFeedbackSystemPrompt({ persona, outcome });
 
   if (!process.env.ANTHROPIC_API_KEY) {
     res.status(500).json({ error: 'Server is missing ANTHROPIC_API_KEY. Set it in your Vercel project settings.' });
