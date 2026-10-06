@@ -69,7 +69,7 @@ function clampPatience(n) {
 }
 
 function cleanMessages(msgs) {
-  if (!Array.isArray(msgs) || msgs.length === 0 || msgs.length > 40) return null;
+  if (!Array.isArray(msgs) || msgs.length === 0 || msgs.length > 80) return null;
   const out = [];
   for (const m of msgs) {
     if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') return null;
