@@ -1,3 +1,6 @@
+const {
+  loadPersona, sanitizeTone, clampPatience, cleanMessages, buildProspectSystemPrompt
+} = require('./_prompts');
 // Checks and atomically increments a per-user request count in a sliding
 // window, via a Postgres function (so concurrent requests can't race past
 // the limit). Fails OPEN on error — a rate-limiter outage should never be
@@ -43,11 +46,37 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const { system, messages, voiceHint, speakingRate } = req.body || {};
-  if (!system || !messages) {
-    res.status(400).json({ error: 'Missing system or messages in request body' });
+   const body = req.body || {};
+
+  const persona = await loadPersona(body.personaId, rlToken);
+  if (!persona) {
+    res.status(400).json({ error: 'Unknown prospect.' });
     return;
   }
+
+  // Pro gate enforced server-side: only the 3 built-ins are free.
+  const proCheck = await checkIsPro(rlToken, user.id);
+  const isBuiltin = ['jamie', 'priya', 'derek'].includes(body.personaId);
+  if (!isBuiltin && !proCheck.isPro) {
+    res.status(403).json({ error: 'Custom prospects require Pro.' });
+    return;
+  }
+
+  const messages = cleanMessages(body.messages);
+  if (!messages) {
+    res.status(400).json({ error: 'Invalid conversation.' });
+    return;
+  }
+
+  const system = buildProspectSystemPrompt({
+    persona,
+    patience: clampPatience(body.patience),
+    toneDescriptor: sanitizeTone(body.toneDescriptor),
+    interrupted: body.interrupted === true
+  });
+  const voiceHint = persona.voiceHint;
+  const rate = Number(body.speakingRate);
+  const speakingRate = Number.isFinite(rate) ? Math.max(0.8, Math.min(1.4, rate)) : 1.02;
 
   const tool = {
     name: 'prospect_turn',
@@ -73,10 +102,6 @@ module.exports = async (req, res) => {
     return;
   }
   const claudeMs = Date.now() - t0;
-
-  const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  const proCheck = await checkIsPro(token, user.id);
 
   let audioBuffer, format, provider;
   const t1 = Date.now();
