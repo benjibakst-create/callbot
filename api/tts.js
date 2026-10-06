@@ -20,16 +20,10 @@ async function checkRateLimit(token, userId, limit, windowSeconds) {
   }
 }
 
-// Serverless function (runs on Vercel). Routes Pro users to Deepgram
-// Aura-2 (better quality, costs money per character) and everyone else to
-// Google TTS (free tier). Pro status is verified server-side against
-// Supabase — the client's own claim of being Pro is never trusted, so
-// there's no way to force Deepgram usage onto a free account.
-//
-// TEMPORARY: this version includes extra "debug" fields in the JSON
-// response so the actual routing decision is visible in the browser's
-// Network tab, since Vercel's log viewer has been unreliable to read
-// during setup. Safe to strip out once this is confirmed working.
+// Serverless function (runs on Vercel). Only speaks the call opener.
+// Pro users get Deepgram Aura-2 (better quality, costs per character);
+// everyone else gets Google TTS. Pro status is verified server-side
+// against Supabase — the client's own claim is never trusted.
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -42,46 +36,50 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const { text, voiceHint, speakingRate } = req.body || {};
-  if (!text) {
-    res.status(400).json({ error: 'Missing text in request body' });
+  const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+
+  const withinLimit = await checkRateLimit(token, user.id, 20, 60); // 20/minute
+  if (!withinLimit) {
+    res.status(429).json({ error: "You're going a bit fast — try again in a moment." });
     return;
   }
 
-  const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  const proCheck = await checkIsPro(token, user.id);
+  const { text, voiceHint, speakingRate } = req.body || {};
 
-  const debug = {
-    userId: user.id,
-    isPro: proCheck.isPro,
-    proReason: proCheck.reason,
-    hasDeepgramKey: !!process.env.DEEPGRAM_API_KEY
-  };
+  // The only line the browser ever needs spoken here is the opener.
+  // Everything after that comes back as audio from /api/turn.
+  if (text !== 'Hello?') {
+    res.status(400).json({ error: 'Not allowed.' });
+    return;
+  }
+
+  const rate = Number(speakingRate);
+  const safeRate = Number.isFinite(rate) ? Math.max(0.8, Math.min(1.4, rate)) : 1.02;
+
+  const proCheck = await checkIsPro(token, user.id);
 
   try {
     if (proCheck.isPro && process.env.DEEPGRAM_API_KEY) {
       try {
         const audioContent = await speakWithDeepgram(text, voiceHint);
-        res.status(200).json({ audioContent, provider: 'deepgram', format: 'wav', debug });
+        res.status(200).json({ audioContent, provider: 'deepgram', format: 'wav' });
         return;
       } catch (deepgramErr) {
-        // Don't let a Deepgram outage/error break the call for a paying
-        // user — fall back to Google rather than surfacing an error.
-        debug.deepgramError = deepgramErr.message;
+        // Don't break the call for a paying user if Deepgram has a hiccup —
+        // fall back to Google. Logged server-side only, never sent to the browser.
+        console.error('Deepgram TTS failed, falling back to Google:', deepgramErr.message);
       }
-    } else {
-      debug.skippedDeepgramBecause = !proCheck.isPro ? 'not Pro' : 'no DEEPGRAM_API_KEY';
     }
 
     if (!process.env.GOOGLE_TTS_API_KEY) {
-      res.status(500).json({ error: 'Server is missing GOOGLE_TTS_API_KEY. Set it in your Vercel project settings.', debug });
+      res.status(500).json({ error: 'Voice service is not configured.' });
       return;
     }
-    const audioContent = await speakWithGoogleServer(text, voiceHint, speakingRate);
-    res.status(200).json({ audioContent, provider: 'google', format: 'mp3', debug });
+    const audioContent = await speakWithGoogleServer(text, voiceHint, safeRate);
+    res.status(200).json({ audioContent, provider: 'google', format: 'mp3' });
   } catch (err) {
-    res.status(500).json({ error: err.message, debug });
+    console.error('TTS error:', err.message);
+    res.status(500).json({ error: 'Could not generate audio.' });
   }
 };
 
@@ -107,12 +105,9 @@ async function verifySupabaseUser(req) {
 // Reads plan/plan_renews_at/free_access for this user directly from
 // Supabase's REST API, using their own token — RLS restricts this to
 // exactly their own row, so there's no way to query anyone else's status.
-// Returns { isPro, reason } — reason is included for debugging.
 async function checkIsPro(token, userId) {
-  if (!token) return { isPro: false, reason: 'no token' };
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-    return { isPro: false, reason: 'missing SUPABASE_URL/SUPABASE_ANON_KEY on server' };
-  }
+  if (!token) return { isPro: false };
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return { isPro: false };
 
   try {
     const response = await fetch(
@@ -124,21 +119,16 @@ async function checkIsPro(token, userId) {
         }
       }
     );
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      return { isPro: false, reason: `Supabase query failed: ${response.status} ${body.slice(0,150)}` };
-    }
+    if (!response.ok) return { isPro: false };
     const rows = await response.json();
     const row = rows && rows[0];
-    if (!row) return { isPro: false, reason: 'no profiles row returned for this user' };
-    if (row.free_access) return { isPro: true, reason: 'free_access=true' };
-    if (row.plan === 'pro') return { isPro: true, reason: "plan='pro'" };
-    if (row.plan_renews_at && new Date(row.plan_renews_at) > new Date()) {
-      return { isPro: true, reason: 'plan_renews_at in the future' };
-    }
-    return { isPro: false, reason: `plan='${row.plan}', free_access=${row.free_access}, plan_renews_at=${row.plan_renews_at}` };
+    if (!row) return { isPro: false };
+    if (row.free_access) return { isPro: true };
+    if (row.plan === 'pro') return { isPro: true };
+    if (row.plan_renews_at && new Date(row.plan_renews_at) > new Date()) return { isPro: true };
+    return { isPro: false };
   } catch (e) {
-    return { isPro: false, reason: 'exception: ' + e.message };
+    return { isPro: false };
   }
 }
 
@@ -146,8 +136,7 @@ async function speakWithDeepgram(text, voiceHint) {
   const model = voiceHint === 'male' ? 'aura-2-arcas-en' : 'aura-2-asteria-en';
   // WAV (linear16 + container=wav) instead of raw mp3 — WAV's header states
   // the exact byte length up front, which avoids the start/end clipping
-  // that raw MP3 streams can suffer when embedded directly as a data URI
-  // with no external framing/duration info for the browser to rely on.
+  // that raw MP3 streams can suffer when embedded directly as a data URI.
   const response = await fetch(
     `https://api.deepgram.com/v1/speak?model=${model}&encoding=linear16&sample_rate=24000&container=wav`,
     {
