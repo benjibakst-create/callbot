@@ -447,6 +447,11 @@
   ::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:4px;}
   .report-link{color:var(--text-faint);text-decoration:underline;cursor:pointer;margin-left:4px;}
   .report-link:hover{color:var(--bad);}
+ .legal-footer{text-align:center;margin-top:36px;font-size:12px;color:var(--text-faint);font-family:'JetBrains Mono',monospace;}
+.legal-footer a{color:var(--text-faint);}
+.legal-footer a:hover{color:var(--brass);}
+.consent-row{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:var(--text-muted);line-height:1.5;margin-bottom:16px;}
+.consent-row input{margin-top:3px;accent-color:var(--brass);}
   a{color:var(--brass);}
   *:focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
 </style>
@@ -492,6 +497,10 @@
       </div>
     </div>
 
+        <label class="consent-row hidden" id="auth-consent">
+      <input type="checkbox" id="auth-consent-check">
+      <span>I'm 18 or older and I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+    </label>
     <div class="banner error hidden" id="auth-error"></div>
 
     <button class="btn-primary" id="auth-submit">Sign in</button>
@@ -598,6 +607,8 @@
     <div class="account-row">
       <span id="account-row-name"></span> · <a id="logout-link">Log out</a>
       <span id="manage-billing-wrap" class="hidden"> · <a id="manage-billing-link">Manage billing</a></span>
+      <span id="manage-billing-wrap" class="hidden"> · <a id="manage-billing-link">Manage billing</a></span>
+      · <a id="delete-account-link">Delete account</a>
     </div>
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
@@ -738,6 +749,10 @@
     <div id="history-body"></div>
   </div>
 
+  <div class="legal-footer">
+    <a href="terms.html" target="_blank" rel="noopener">Terms</a> · <a href="privacy.html" target="_blank" rel="noopener">Privacy</a>
+  </div>
+
 </div>
 
 <script>
@@ -832,6 +847,7 @@ function setAuthMode(mode){
   document.getElementById('auth-submit').textContent = mode==='signin' ? 'Sign in' : 'Create account';
   document.getElementById('auth-error').classList.add('hidden');
   document.getElementById('auth-email-field').classList.toggle('hidden', mode!=='signup');
+  document.getElementById('auth-consent').classList.toggle('hidden', mode!=='signup');
   document.getElementById('forgot-password-row').classList.toggle('hidden', mode!=='signin');
 }
 
@@ -856,6 +872,10 @@ document.getElementById('auth-submit').addEventListener('click', async ()=>{
   }
 
   let email = '';
+    if (authMode === 'signup' && !document.getElementById('auth-consent-check').checked){
+    showAuthError('Please confirm you are 18 or older and agree to the Terms and Privacy Policy.');
+    return;
+  }
   if (authMode === 'signup'){
     email = document.getElementById('auth-email').value.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
@@ -922,6 +942,38 @@ document.getElementById('logout-link').addEventListener('click', async ()=>{
   currentUser = null;
   setAuthMode('signup');
   showScreen('auth-screen');
+});
+document.getElementById('logout-link').addEventListener('click', async ()=>{
+  await sb.auth.signOut();
+  currentUser = null;
+  setAuthMode('signup');
+  showScreen('auth-screen');
+});
+
+document.getElementById('delete-account-link').addEventListener('click', async ()=>{
+  const typed = prompt(
+    "This permanently deletes your account, call history, and prospects, and cancels any subscription.\n\nType DELETE to confirm."
+  );
+  if (typed !== 'DELETE') return;
+
+  try{
+    const token = await getAccessToken();
+    const response = await fetch('/api/delete-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+      body: JSON.stringify({ confirm: 'DELETE' })
+    });
+    const data = await response.json().catch(()=>({}));
+    if (!response.ok) throw new Error(data.error || 'Could not delete your account.');
+
+    await sb.auth.signOut({ scope: 'local' });
+    currentUser = null;
+    alert('Your account has been deleted.');
+    setAuthMode('signup');
+    showScreen('auth-screen');
+  }catch(err){
+    alert(err.message || 'Something went wrong.');
+  }
 });
 
 // ---------- FORGOT / RESET PASSWORD ----------
