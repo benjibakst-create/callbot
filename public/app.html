@@ -2251,7 +2251,11 @@ async function renderHistory(){
     return `
       <div class="history-item" data-id="${r.id}">
         <div class="history-item-top" data-toggle="${r.id}">
-          <div class="avatar" data-avatar-name="${escapeHtml(r.personaName)}"></div>
+          function escapeHtml(str){
+  return String(str == null ? '' : str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
           <div class="hi-info">
             <div class="hi-name">${escapeHtml(r.personaName)}</div>
             <div class="hi-meta">${formatHistDate(r.date)} · ${formatDuration(r.durationSeconds)}</div>
