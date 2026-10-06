@@ -445,7 +445,8 @@
   ::-webkit-scrollbar{width:8px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:4px;}
-
+  .report-link{color:var(--text-faint);text-decoration:underline;cursor:pointer;margin-left:4px;}
+  .report-link:hover{color:var(--bad);}
   a{color:var(--brass);}
   *:focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
 </style>
@@ -664,7 +665,22 @@
       <button class="btn-primary" id="pf-save">Save prospect</button>
     </div>
   </div>
-
+ 
+  <!-- AI DISCLOSURE SCREEN -->
+  <div id="ai-disclosure-screen" class="screen hidden">
+    <p class="eyebrow">Before you dial</p>
+    <h1>This is an AI, not a real person</h1>
+    <div class="banner" style="margin-top:18px;">
+      <strong id="disclosure-name"></strong> is an AI-generated character used for sales practice.
+      Everything they say is produced by an AI, and no real person is on the other end.
+      Your words are processed by AI services to generate their replies and your scorecard.
+    </div>
+    <button class="btn-primary" id="disclosure-confirm">I understand — start the call</button>
+    <div class="account-row" style="justify-content:center;margin-top:16px;">
+      <a class="inline-link" id="disclosure-cancel">Back</a>
+    </div>
+  </div>
+ 
   <!-- CALL SCREEN -->
   <div id="call-screen" class="screen hidden call-screen">
     <div class="call-header">
@@ -1296,7 +1312,7 @@ function personaCard(p){
       </div>
       <div class="persona-role">${escapeHtml(p.role)}</div>
       <div class="persona-desc">${escapeHtml(p.desc)}</div>
-      ${p.isCustom ? `<div class="owner-badge">by @${escapeHtml(p.ownerUsername)}</div>` : ''}
+      ${p.isCustom ? `<div class="owner-badge">by @${escapeHtml(p.ownerUsername)}${!isOwner ? ` · <a class="report-link" data-action="report">Report</a>` : ''}</div>` : ''}
     </div>
   `;
   styleAvatar(card.querySelector('.avatar'), p);
@@ -1304,6 +1320,11 @@ function personaCard(p){
   card.addEventListener('click', async (e)=>{
     const action = e.target.getAttribute('data-action');
     if (action === 'edit'){ e.stopPropagation(); openPersonaForm(p.key); return; }
+        if (action === 'report'){
+      e.stopPropagation();
+      await reportPersona(p);
+      return;
+    }
     if (action === 'delete'){
       e.stopPropagation();
       if (confirm(`Delete "${p.name}"? This can't be undone.`)){
@@ -1320,7 +1341,23 @@ function personaCard(p){
   return card;
 }
 
-function escapeHtml(str){
+  async function reportPersona(p){
+  const reason = prompt(`Report "${p.name}" — what's wrong with it? (e.g. offensive, harmful, spam)`);
+  if (!reason || !reason.trim()) return;
+  const { error } = await sb.from('persona_reports').insert({
+    persona_id: p.key,
+    reporter_id: currentUser.id,
+    reason: reason.trim().slice(0, 500)
+  });
+  if (error){
+    alert("Couldn't send the report — please try again.");
+    console.error(error);
+  } else {
+    alert('Thanks — your report was sent.');
+  }
+}
+
+ function escapeHtml(str){
   const d = document.createElement('div');
   d.textContent = str == null ? '' : str;
   return d.innerHTML;
@@ -1421,7 +1458,18 @@ document.getElementById('pf-save').addEventListener('click', async ()=>{
 });
 
 // ---------- CALL SCREEN ----------
+let pendingPersona = null;
+
 function startCall(persona){
+  pendingPersona = persona;
+  document.getElementById('disclosure-name').textContent = persona.name;
+  showScreen('ai-disclosure-screen');
+}
+document.getElementById('disclosure-confirm').addEventListener('click', ()=>{
+  if (pendingPersona) beginCall(pendingPersona);
+});
+document.getElementById('disclosure-cancel').addEventListener('click', ()=> showScreen('setup-screen'));
+  function beginCall(persona){
   state.persona = persona;
   state.patience = persona.startPatience;
   state.history = [];
@@ -1433,7 +1481,7 @@ function startCall(persona){
 
   showScreen('call-screen');
   document.getElementById('cs-name').textContent = persona.name;
-  document.getElementById('cs-role').textContent = persona.role;
+  document.getElementById('cs-role').textContent = persona.role + ' · AI';
   styleAvatar(document.getElementById('cs-avatar'), persona);
   document.getElementById('transcript').innerHTML = '';
   document.getElementById('type-input').value = '';
