@@ -1061,6 +1061,7 @@ document.getElementById('manage-billing-link').addEventListener('click', async (
   }
 });
 
+  if (window.location.hash.includes('type=recovery')) return;
 async function tryRestoreSession(){
   const { data: { session } } = await sb.auth.getSession();
   if (session && session.user){
@@ -1814,7 +1815,6 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
   try{
     const p = state.persona;
     const beforePatience = state.patience;
-    const system = buildProspectSystemPrompt(text, toneDescriptor, opts.interrupted);
     const messages = state.history
       .filter(h=>h.speaker==='you' || h.speaker==='prospect')
       .map(h=>({role: h.speaker==='you' ? 'user':'assistant', content: h.text}));
@@ -1823,8 +1823,14 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
     const response = await fetch("/api/turn",{
       method:"POST",
       headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-      body: JSON.stringify({ system, messages, voiceHint: p.voiceHint, speakingRate: computeSpeakingRate(beforePatience) })
-    });
+          body: JSON.stringify({
+        personaId: p.key,
+        patience: beforePatience,
+        toneDescriptor: toneDescriptor || null,
+        interrupted: !!opts.interrupted,
+        messages,
+        speakingRate: computeSpeakingRate(beforePatience)
+      })
 
     if (!response.ok){
       const data = await response.json().catch(()=>({}));
@@ -2053,7 +2059,7 @@ Score the CALLER's performance only. Be honest and specific — reference actual
     const response = await fetch("/api/feedback",{
       method:"POST",
       headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-      body: JSON.stringify({ system, transcript: transcriptLines })
+      body: JSON.stringify({ personaId: state.persona.key, outcome: state.outcome, transcript: transcriptLines })
     });
     const fb = await response.json().catch(()=>({}));
     if (!response.ok){ throw new Error(fb.error || `Server error ${response.status}`); }
