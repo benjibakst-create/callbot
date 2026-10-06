@@ -748,11 +748,6 @@ const SUPABASE_URL = 'https://ittbuxgnqwupjzwtnicj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0dGJ1eGducXd1cGp6d3RuaWNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5MzAxMjEsImV4cCI6MjEwMjUwNjEyMX0.DLIBeN-9mkOMWS285_5ORRode2Q84z1CJKOR3Cy3X_k';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-
-  return username.toLowerCase() + '@dialin.local';
-}
-
-
 let currentUser = null; // { id, username }
 
 let audioUnlocked = false;
@@ -822,8 +817,6 @@ async function fetchSharedPersonas(){
 }
 
 
-  return [...BUILTIN_PERSONAS, ...SHARED_PERSONAS];
-}
 
 // ---------- AUTH ----------
 let authMode = 'signin';
@@ -1062,8 +1055,9 @@ document.getElementById('manage-billing-link').addEventListener('click', async (
   }
 });
 
-  if (window.location.hash.includes('type=recovery')) return;
+ 
 async function tryRestoreSession(){
+  if (window.location.hash.includes('type=recovery')) return;
   const { data: { session } } = await sb.auth.getSession();
   if (session && session.user){
     currentUser = { id: session.user.id, username: session.user.user_metadata?.username || 'you' };
@@ -1190,7 +1184,6 @@ function showScreen(id){
   el.classList.add('screen');
   const hideNav = id === 'auth-screen' || id === 'call-screen' || id === 'forgot-screen' || id === 'reset-screen'
   || id === 'upgrade-screen' || id === 'checkout-pending-screen' || id === 'ai-disclosure-screen';
-  || id === 'upgrade-screen' || id === 'checkout-pending-screen';
   document.getElementById('history-nav-btn').classList.toggle('hidden', hideNav);
   document.getElementById('upgrade-nav-btn').classList.toggle('hidden', hideNav || isPro());
 }
@@ -1511,6 +1504,7 @@ document.getElementById('disclosure-cancel').addEventListener('click', ()=> show
     setMicEnabled(true); // mic stays live during speech so you can barge in
     await speak(opener, persona.voiceHint, computeSpeakingRate(persona.startPatience));
     prospectSpeaking = false;
+    if (state.ended || turnCounter > 0 || recognizing) return;
     setOrb('idle','your turn — talk or type');
     setMicEnabled(true);
   }, 500);
@@ -1798,7 +1792,6 @@ document.getElementById('type-input').addEventListener('keydown', (e)=>{
 
 document.getElementById('end-btn').addEventListener('click', ()=>{
   if (state.ended) return;
-  const myTurn = ++turnCounter;
   state.outcome = 'end';
   finishCall();
 });
@@ -1815,6 +1808,7 @@ function friendlyError(message){
 
 async function submitUserLine(text, toneDescriptor, opts = {}){
   if (state.ended) return;
+  const myTurn = ++turnCounter;
   setMicEnabled(false);
   addLine('you', text);
   setOrb('thinking','thinking…');
@@ -1829,7 +1823,7 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
     const response = await fetch("/api/turn",{
       method:"POST",
       headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-          body: JSON.stringify({
+      body: JSON.stringify({
         personaId: p.key,
         patience: beforePatience,
         toneDescriptor: toneDescriptor || null,
@@ -1837,6 +1831,7 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
         messages,
         speakingRate: computeSpeakingRate(beforePatience)
       })
+    });
 
     if (!response.ok){
       const data = await response.json().catch(()=>({}));
@@ -1860,7 +1855,6 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
     setMicEnabled(true); // mic stays live during speech so you can barge in
     await speakBlob(audioBlob);
     prospectSpeaking = false;
-    if (state.ended || turnCounter > 0 || recognizing) return;
     if (state.ended) return;
     if (hangup){ state.outcome = 'hangup'; finishCall(); return; }
     if (won){ state.outcome = 'win'; finishCall(); return; }
@@ -2266,13 +2260,8 @@ async function renderHistory(){
     `).join('');
 
     return `
-      <div class="history-item" data-id="${r.id}">
-        <div class="history-item-top" data-toggle="${r.id}">
-          function escapeHtml(str){
-  return String(str == null ? '' : str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
+            <div class="history-item-top" data-toggle="${r.id}">
+          <div class="avatar" data-avatar-name="${escapeHtml(r.personaName)}"></div>
           <div class="hi-info">
             <div class="hi-name">${escapeHtml(r.personaName)}</div>
             <div class="hi-meta">${formatHistDate(r.date)} · ${formatDuration(r.durationSeconds)}</div>
