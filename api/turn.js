@@ -35,6 +35,13 @@ module.exports = async (req, res) => {
     res.status(401).json({ error: 'Not signed in' });
     return;
   }
+  
+    const rlToken = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+  const withinLimit = await checkRateLimit(rlToken, user.id, 20, 60); // 20 turns/minute
+  if (!withinLimit) {
+    res.status(429).json({ error: "You're going a bit fast — try again in a moment." });
+    return;
+  }
 
   const { system, messages, voiceHint, speakingRate } = req.body || {};
   if (!system || !messages) {
