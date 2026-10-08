@@ -72,8 +72,12 @@ module.exports = async (req, res) => {
     persona,
     patience: clampPatience(body.patience),
     toneDescriptor: sanitizeTone(body.toneDescriptor),
-    interrupted: body.interrupted === true
+    interrupted: body.interrupted === true,
+    scenario: body.scenario,
+    context: body.scenarioContext,
+    recall: body.recall
   });
+  
   const voiceHint = persona.voiceHint;
   const rate = Number(body.speakingRate);
   const speakingRate = Number.isFinite(rate) ? Math.max(0.8, Math.min(1.4, rate)) : 1.02;
