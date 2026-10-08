@@ -70,7 +70,13 @@ module.exports = async (req, res) => {
     res.status(400).json({ error: 'Missing transcript.' });
     return;
   }
-  const system = buildFeedbackSystemPrompt({ persona, outcome });
+   
+  const system = buildFeedbackSystemPrompt({
+    persona, outcome,
+    scenario: body.scenario,
+    context: body.scenarioContext,
+    recall: body.recall
+  });
 
   if (!process.env.ANTHROPIC_API_KEY) {
     res.status(500).json({ error: 'Server is missing ANTHROPIC_API_KEY. Set it in your Vercel project settings.' });
