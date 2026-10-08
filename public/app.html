@@ -2168,7 +2168,10 @@ Score the CALLER's performance only. Be honest and specific — reference actual
     const response = await fetch("/api/feedback",{
       method:"POST",
       headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-      body: JSON.stringify({ personaId: state.persona.key, outcome: state.outcome, transcript: transcriptLines })
+           body: JSON.stringify({
+        personaId: state.persona.key, outcome: state.outcome, transcript: transcriptLines,
+        scenario: state.scenario, scenarioContext: state.scenarioContext, recall: state.recall
+      })
     });
     const fb = await response.json().catch(()=>({}));
     if (!response.ok){ throw new Error(fb.error || `Server error ${response.status}`); }
@@ -2364,7 +2367,8 @@ async function renderHistory(){
       </div>
     `).join('');
 
-    return `
+     return `
+          <div class="history-item" data-id="${r.id}">
             <div class="history-item-top" data-toggle="${r.id}">
           <div class="avatar" data-avatar-name="${escapeHtml(r.personaName)}"></div>
           <div class="hi-info">
