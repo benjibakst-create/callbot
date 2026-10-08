@@ -677,7 +677,7 @@
     </div>
   </div>
  
-  <!-- AI DISCLOSURE SCREEN -->
+   <!-- AI DISCLOSURE AND CALL SETUP SCREEN -->
   <div id="ai-disclosure-screen" class="screen hidden">
     <p class="eyebrow">Before you dial</p>
     <h1>This is an AI, not a real person</h1>
@@ -686,7 +686,19 @@
       Everything they say is produced by an AI, and no real person is on the other end.
       Your words are processed by AI services to generate their replies and your scorecard.
     </div>
-    <button class="btn-primary" id="disclosure-confirm">I understand — start the call</button>
+
+    <div class="field">
+      <label class="field-label" for="scenario-select">Type of call</label>
+      <select id="scenario-select"></select>
+      <div class="field-hint" id="scenario-blurb"></div>
+    </div>
+    <div class="field hidden" id="scenario-context-field">
+      <label class="field-label" for="scenario-context">What happened before? (optional)</label>
+      <textarea id="scenario-context" maxlength="600"></textarea>
+      <div class="field-hint">The prospect only knows what you write here. Use made-up details, not real customer information.</div>
+    </div>
+
+    <button class="btn-primary" id="disclosure-confirm">I understand, start the call</button>
     <div class="account-row" style="justify-content:center;margin-top:16px;">
       <a class="inline-link" id="disclosure-cancel">Back</a>
     </div>
@@ -1507,20 +1519,56 @@ document.getElementById('pf-save').addEventListener('click', async ()=>{
 });
 
 // ---------- CALL SCREEN ----------
+// ---------- CALL TYPES ----------
+const SCENARIOS = [
+  { key:'cold',      label:'Cold call',                          blurb:"They've never heard of you.", placeholder:'', patienceShift:0 },
+  { key:'email',     label:'Follow-up after an email',           blurb:"You emailed them and are calling to follow up. They may not have read it.", placeholder:'e.g. Subject: Cutting fuel-routing costs. I said we reduce costs about 8% and offered a 15-minute call.', patienceShift:0 },
+  { key:'voicemail', label:'Follow-up after a voicemail',        blurb:"You left a voicemail and never heard back.", placeholder:'e.g. Left a voicemail Tuesday about the routing software. No reply.', patienceShift:-5 },
+  { key:'meeting',   label:'Follow-up after a demo or meeting',  blurb:"They saw a demo and haven't decided. Other people are involved.", placeholder:"e.g. Demoed the dashboard Tuesday. She liked the reporting but needs her CEO's sign-off.", patienceShift:10 },
+  { key:'referral',  label:'Warm introduction',                  blurb:"Someone suggested you call. They'll give you a few minutes.", placeholder:'e.g. Jordan Lee at Hartwell suggested I reach out about reducing dispatch costs.', patienceShift:15 },
+  { key:'inbound',   label:'Calling back an inbound lead',       blurb:"They filled out a form or downloaded something, and only half remember it.", placeholder:'e.g. Downloaded the fuel-cost guide yesterday and checked the pricing page twice.', patienceShift:15 },
+  { key:'ghosted',   label:'Re-engage after a proposal',         blurb:"You sent a proposal and they went quiet.", placeholder:'e.g. Sent a $48k annual proposal on Sept 18. No reply to two follow-up emails.', patienceShift:-10 }
+];
+function scenarioByKey(key){ return SCENARIOS.find(s=>s.key===key) || SCENARIOS[0]; }
+let lastScenarioKey = 'cold';
+
+function updateScenarioUI(){
+  const s = scenarioByKey(document.getElementById('scenario-select').value);
+  document.getElementById('scenario-blurb').textContent = s.blurb;
+  document.getElementById('scenario-context-field').classList.toggle('hidden', s.key === 'cold');
+  document.getElementById('scenario-context').placeholder = s.placeholder;
+}
+document.getElementById('scenario-select').addEventListener('change', updateScenarioUI);
+
 let pendingPersona = null;
 
 function startCall(persona){
   pendingPersona = persona;
   document.getElementById('disclosure-name').textContent = persona.name;
+  const sel = document.getElementById('scenario-select');
+  sel.innerHTML = SCENARIOS.map(s=> `<option value="${s.key}">${escapeHtml(s.label)}</option>`).join('');
+  sel.value = lastScenarioKey;
+  document.getElementById('scenario-context').value = '';
+  updateScenarioUI();
   showScreen('ai-disclosure-screen');
 }
+
 document.getElementById('disclosure-confirm').addEventListener('click', ()=>{
-  if (pendingPersona) beginCall(pendingPersona);
+  if (!pendingPersona) return;
+  const s = scenarioByKey(document.getElementById('scenario-select').value);
+  lastScenarioKey = s.key;
+  const context = s.key === 'cold' ? '' : document.getElementById('scenario-context').value.trim().slice(0, 600);
+  const roll = Math.random();
+  const recall = s.key === 'cold' ? null : (roll < 0.4 ? 'low' : roll < 0.8 ? 'medium' : 'high');
+  beginCall(pendingPersona, { key:s.key, label:s.label, context, recall, patienceShift:s.patienceShift });
 });
 document.getElementById('disclosure-cancel').addEventListener('click', ()=> showScreen('setup-screen'));
-  function beginCall(persona){
+ function beginCall(persona, scenario){
   state.persona = persona;
-  state.patience = persona.startPatience;
+  state.scenario = scenario.key;
+  state.scenarioContext = scenario.context;
+  state.recall = scenario.recall;
+  state.patience = Math.max(10, Math.min(95, persona.startPatience + scenario.patienceShift));
   state.history = [];
   state.ended = false;
   state.outcome = null;
@@ -1534,6 +1582,7 @@ document.getElementById('disclosure-cancel').addEventListener('click', ()=> show
   document.getElementById('cs-role').textContent = persona.role + ' · AI';
   styleAvatar(document.getElementById('cs-avatar'), persona);
   document.getElementById('transcript').innerHTML = '';
+  addLine('system', 'Call type: ' + scenario.label);
   document.getElementById('type-input').value = '';
 
   updatePatienceUI();
@@ -1880,6 +1929,9 @@ async function submitUserLine(text, toneDescriptor, opts = {}){
         patience: beforePatience,
         toneDescriptor: toneDescriptor || null,
         interrupted: !!opts.interrupted,
+        scenario: state.scenario,
+        scenarioContext: state.scenarioContext,
+        recall: state.recall,
         messages,
         speakingRate: computeSpeakingRate(beforePatience)
       })
@@ -2140,7 +2192,7 @@ async function renderFeedback(fb){
   await saveCallToHistory(fb);
 
   const outcomeMap = {
-    win: {cls:'win', label:'Meeting booked'},
+    win: {cls:'win', label:'Success'},
     hangup: {cls:'hangup', label:'Prospect hung up'},
     end: {cls:'end', label:'Call ended'}
   };
@@ -2214,7 +2266,8 @@ async function saveCallToHistory(fb){
     user_id: currentUser.id,
     persona_name: state.persona.name,
     persona_role: state.persona.role,
-    difficulty: state.persona.difficulty,
+    difficulty: state.persona.difficulty,     
+    scenario: state.scenario,
     outcome: state.outcome,
     duration_seconds: state.timerSeconds,
     overall_score: fb.overall_score || 0,
@@ -2299,7 +2352,7 @@ async function renderHistory(){
 
   const items = log.map(r => {
     const outcomeMap = {
-      win: {cls:'win', label:'Meeting booked'},
+      win: {cls:'win', label:'Success'},
       hangup: {cls:'hangup', label:'Hung up'},
       end: {cls:'end', label:'Ended'}
     };
