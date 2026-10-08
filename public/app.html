@@ -2307,6 +2307,9 @@ document.getElementById('history-nav-btn').addEventListener('click', async ()=>{
   showScreen('history-screen');
 });
 
+let historyFilter = 'all';
+let historyRows = [];
+
 async function renderHistory(){
   const body = document.getElementById('history-body');
   body.innerHTML = `<div class="loading-dots"><div></div><div></div><div></div></div>`;
@@ -2316,12 +2319,24 @@ async function renderHistory(){
     body.innerHTML = `<div class="banner error">Couldn't load history: ${escapeHtml(error.message)}</div>`;
     return;
   }
-  const log = (data||[]).map(r => ({
+  historyRows = data || [];
+  drawHistory();
+}
+
+// Draws from the rows already fetched, so changing the filter is instant.
+function drawHistory(){
+  const body = document.getElementById('history-body');
+
+  // Calls saved before call types existed have no scenario. They were all cold calls.
+  const typeOf = r => (SCENARIOS.some(s => s.key === r.scenario) ? r.scenario : 'cold');
+
+  const allLog = historyRows.map(r => ({
     id: r.id,
     date: r.created_at,
     personaName: r.persona_name,
     durationSeconds: r.duration_seconds,
     outcome: r.outcome,
+    scenario: typeOf(r),
     overall_score: r.overall_score,
     opener_score: r.opener_score,
     objection_handling_score: r.objection_handling_score,
@@ -2332,7 +2347,7 @@ async function renderHistory(){
     transcript: r.transcript
   }));
 
-  if (log.length === 0){
+  if (allLog.length === 0){
     body.innerHTML = `
       <div class="empty-state">
         <div class="big-icon">☎</div>
@@ -2343,14 +2358,77 @@ async function renderHistory(){
     return;
   }
 
+  // ----- average score by call type (always across all calls) -----
+  const MIN_FOR_VERDICT = 3;
+  const byType = SCENARIOS.map(s => {
+    const calls = allLog.filter(r => r.scenario === s.key);
+    if (!calls.length) return null;
+    const avg = Math.round(calls.reduce((sum, r) => sum + (r.overall_score || 0), 0) / calls.length);
+    const wins = calls.filter(r => r.outcome === 'win').length;
+    return { key: s.key, label: s.label, count: calls.length, avg, wins };
+  }).filter(Boolean).sort((a, b) => a.avg - b.avg);
+
+  const rated = byType.filter(t => t.count >= MIN_FOR_VERDICT);
+  const weakest = rated.length >= 2 ? rated[0] : null;
+
+  const breakdownHtml = `
+    <div class="sparkline-wrap">
+      <div class="sparkline-title">Average score by call type</div>
+      <p class="sub" style="margin:0 0 14px;">${weakest
+        ? `Weakest so far: <strong>${escapeHtml(weakest.label)}</strong>, averaging ${weakest.avg} over ${weakest.count} calls.`
+        : `Make at least ${MIN_FOR_VERDICT} calls in two different call types to see which one you're weakest at.`}</p>
+      ${byType.map(t => `
+        <div class="score-row" data-filter-key="${t.key}" style="cursor:pointer;margin-bottom:12px;">
+          <div class="score-row-top">
+            <span>${escapeHtml(t.label)} <span class="hi-meta">(${t.count} ${t.count === 1 ? 'call' : 'calls'}, ${t.wins} ${t.wins === 1 ? 'success' : 'successes'})</span></span>
+            <span class="val">${t.avg}/100</span>
+          </div>
+          <div class="score-track"><div class="score-fill" style="width:${t.avg}%;"></div></div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  const filterHtml = `
+    <div class="field" style="margin-bottom:18px;">
+      <label class="field-label" for="history-filter">Show</label>
+      <select id="history-filter">
+        <option value="all">All call types</option>
+        ${SCENARIOS.map(s => `<option value="${s.key}"${historyFilter === s.key ? ' selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
+      </select>
+    </div>
+  `;
+
+  const wireControls = () => {
+    const sel = document.getElementById('history-filter');
+    if (sel) sel.addEventListener('change', () => { historyFilter = sel.value; drawHistory(); });
+    body.querySelectorAll('[data-filter-key]').forEach(el => {
+      el.addEventListener('click', () => { historyFilter = el.getAttribute('data-filter-key'); drawHistory(); });
+    });
+  };
+
+  // ----- apply the filter -----
+  const log = historyFilter === 'all' ? allLog : allLog.filter(r => r.scenario === historyFilter);
+
+  if (log.length === 0){
+    body.innerHTML = `
+      ${breakdownHtml}
+      ${filterHtml}
+      <div class="empty-state"><p>No ${escapeHtml(scenarioByKey(historyFilter).label.toLowerCase())} calls yet.</p></div>
+      <button class="btn-primary" style="margin-top:6px;" onclick="backToSetup()">Make a call</button>
+    `;
+    wireControls();
+    return;
+  }
+
   const total = log.length;
   const wins = log.filter(r => r.outcome === 'win').length;
-  const avgScore = Math.round(log.reduce((sum,r)=> sum + (r.overall_score||0), 0) / total);
+  const avgScore = Math.round(log.reduce((sum, r) => sum + (r.overall_score || 0), 0) / total);
 
   const trend = log.slice(0, 12).slice().reverse();
   const sparkBars = trend.map(r => {
-    const h = Math.max(4, Math.round((r.overall_score||0) / 100 * 56));
-    return `<div class="spark-bar ${scoreBand(r.overall_score||0)}" style="height:${h}px;" title="${r.overall_score}/100"></div>`;
+    const h = Math.max(4, Math.round((r.overall_score || 0) / 100 * 56));
+    return `<div class="spark-bar ${scoreBand(r.overall_score || 0)}" style="height:${h}px;" title="${r.overall_score}/100"></div>`;
   }).join('');
 
   const items = log.map(r => {
@@ -2360,20 +2438,20 @@ async function renderHistory(){
       end: {cls:'end', label:'Ended'}
     };
     const oc = outcomeMap[r.outcome] || outcomeMap.end;
-    const transcriptHtml = (r.transcript||[]).map(t => `
+    const transcriptHtml = (r.transcript || []).map(t => `
       <div class="line ${t.speaker}">
-        <span class="who">${t.speaker==='you' ? 'You' : r.personaName}</span>
+        <span class="who">${t.speaker === 'you' ? 'You' : escapeHtml(r.personaName)}</span>
         <p>${escapeHtml(t.text)}</p>
       </div>
     `).join('');
 
-     return `
-          <div class="history-item" data-id="${r.id}">
-            <div class="history-item-top" data-toggle="${r.id}">
+    return `
+      <div class="history-item" data-id="${r.id}">
+        <div class="history-item-top" data-toggle="${r.id}">
           <div class="avatar" data-avatar-name="${escapeHtml(r.personaName)}"></div>
           <div class="hi-info">
             <div class="hi-name">${escapeHtml(r.personaName)}</div>
-            <div class="hi-meta">${formatHistDate(r.date)} · ${formatDuration(r.durationSeconds)}</div>
+            <div class="hi-meta">${formatHistDate(r.date)} · ${escapeHtml(scenarioByKey(r.scenario).label)} · ${formatDuration(r.durationSeconds)}</div>
           </div>
           <div class="hi-right">
             <span class="outcome-chip ${oc.cls}">${oc.label}</span>
@@ -2390,15 +2468,15 @@ async function renderHistory(){
             </div>
             <div class="fb-block">
               <h3>What worked</h3>
-              <ul>${(r.strengths||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('') || '<li>—</li>'}</ul>
+              <ul>${(r.strengths || []).map(s => `<li>${escapeHtml(s)}</li>`).join('') || '<li>—</li>'}</ul>
             </div>
             <div class="fb-block">
               <h3>Work on this next</h3>
-              <ul>${(r.improvements||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('') || '<li>—</li>'}</ul>
+              <ul>${(r.improvements || []).map(s => `<li>${escapeHtml(s)}</li>`).join('') || '<li>—</li>'}</ul>
             </div>
             <div class="fb-block">
               <h3>Key moment</h3>
-              <div class="key-moment">${escapeHtml(r.key_moment||'—')}</div>
+              <div class="key-moment">${escapeHtml(r.key_moment || '—')}</div>
             </div>
             <details class="transcript-details">
               <summary>View full transcript</summary>
@@ -2411,9 +2489,11 @@ async function renderHistory(){
   }).join('');
 
   body.innerHTML = `
+    ${breakdownHtml}
+    ${filterHtml}
     <div class="stat-row">
       <div class="stat-card"><div class="stat-num">${total}</div><div class="stat-label">Calls</div></div>
-      <div class="stat-card"><div class="stat-num">${wins}/${total}</div><div class="stat-label">Booked</div></div>
+      <div class="stat-card"><div class="stat-num">${wins}/${total}</div><div class="stat-label">Successes</div></div>
       <div class="stat-card"><div class="stat-num">${avgScore}</div><div class="stat-label">Avg score</div></div>
     </div>
     <div class="sparkline-wrap">
@@ -2427,20 +2507,23 @@ async function renderHistory(){
     </div>
   `;
 
-  body.querySelectorAll('[data-avatar-name]').forEach(el=>{
+  wireControls();
+
+  body.querySelectorAll('[data-avatar-name]').forEach(el => {
     styleAvatar(el, { name: el.getAttribute('data-avatar-name') });
   });
 
-  body.querySelectorAll('[data-toggle]').forEach(top=>{
-    top.addEventListener('click', ()=>{
+  body.querySelectorAll('[data-toggle]').forEach(top => {
+    top.addEventListener('click', () => {
       top.closest('.history-item').classList.toggle('open');
     });
   });
 
-  document.getElementById('clear-history-btn').addEventListener('click', async ()=>{
+  document.getElementById('clear-history-btn').addEventListener('click', async () => {
     if (!confirm("Clear all your saved call history? This can't be undone.")) return;
     const { error } = await sb.from('call_history').delete().eq('user_id', currentUser.id);
     if (error){ alert('Could not clear history: ' + error.message); return; }
+    historyFilter = 'all';
     renderHistory();
   });
 }
