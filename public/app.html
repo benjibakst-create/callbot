@@ -330,6 +330,17 @@
   .form-actions .btn-primary{flex:1;}
   .form-actions .btn-ghost{flex:0 0 auto;padding:14px 18px;}
 
+  /* ---- AI prospect generator (persona form) ---- */
+  .ai-gen-box{
+    background:linear-gradient(135deg, var(--brass-soft), var(--panel) 70%);
+    border:1px solid rgba(212,168,75,0.35);border-radius:var(--radius-md);
+    padding:16px;margin-bottom:24px;
+  }
+  .ai-gen-box textarea{min-height:72px;}
+  .ai-gen-row{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-top:10px;}
+  .ai-gen-row .field-hint{margin-top:0;flex:1;}
+  .ai-gen-row .btn-secondary{flex-shrink:0;padding:11px 18px;}
+
   /* ---- call screen ---- */
   .call-screen{display:flex;flex-direction:column;align-items:center;}
   .call-header{
@@ -622,7 +633,19 @@
   <div id="persona-form-screen" class="screen hidden">
     <p class="eyebrow" id="pf-eyebrow">New prospect</p>
     <h1 id="pf-heading">Build a prospect</h1>
-    <p class="sub">Describe who's picking up the phone. This will be visible to everyone using the app, credited to your username. The personality field is what actually drives how they talk and react — be specific.</p>
+     <p class="sub">Describe who's picking up the phone. This will be visible to everyone using the app, credited to your username. The personality field is what actually drives how they talk and react — be specific.</p>
+
+    <div class="ai-gen-box">
+      <label class="field-label">✨ Generate from a description</label>
+      <textarea id="pf-ai-prompt" maxlength="600" placeholder="e.g. A skeptical CFO at a mid-size logistics company who's been burned by software vendors and hates buzzwords"></textarea>
+      <div class="ai-gen-row">
+        <div class="field-hint">Fills in the whole form below. You can edit anything before saving.</div>
+        <button class="btn-secondary" id="pf-ai-generate">Generate</button>
+      </div>
+      <div class="banner error hidden" id="pf-ai-error" style="margin:12px 0 0 0;"></div>
+    </div>
+
+    <div class="field-row">
 
     <div class="field-row">
       <div class="field">
@@ -1442,6 +1465,8 @@ function openPersonaForm(key){
   setDifficultySelection(existing ? existing.difficulty : 'medium');
   setVoiceSelection(existing ? existing.voiceHint : 'female');
   document.getElementById('pf-error').classList.add('hidden');
+  document.getElementById('pf-ai-prompt').value = '';
+  document.getElementById('pf-ai-error').classList.add('hidden');
 
   showScreen('persona-form-screen');
 }
@@ -1477,6 +1502,55 @@ document.getElementById('pf-patience').addEventListener('input', (e)=>{
 
 document.getElementById('pf-cancel').addEventListener('click', ()=> showScreen('setup-screen'));
 
+document.getElementById('pf-ai-generate').addEventListener('click', async ()=>{
+  const btn = document.getElementById('pf-ai-generate');
+  const errEl = document.getElementById('pf-ai-error');
+  const description = document.getElementById('pf-ai-prompt').value.trim();
+  errEl.classList.add('hidden');
+
+  if (description.length < 10){
+    errEl.textContent = 'Give me a bit more to work with: a sentence or two about who they are and how they act.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try{
+    const token = await getAccessToken();
+    const response = await fetch('/api/generate-persona', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ description })
+    });
+    const data = await response.json().catch(()=>({}));
+    if (!response.ok) throw new Error(data.error || 'Could not generate a prospect.');
+
+    if (data.declined){
+      errEl.textContent = data.reason || "I can't build that one. Try describing a fictional prospect instead.";
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    document.getElementById('pf-name').value = data.name;
+    document.getElementById('pf-role').value = data.role;
+    document.getElementById('pf-desc').value = data.card_desc;
+    document.getElementById('pf-personality').value = data.personality;
+    document.getElementById('pf-patience').value = data.start_patience;
+    document.getElementById('pf-patience-val').textContent = data.start_patience;
+    setDifficultySelection(data.difficulty);
+    setVoiceSelection(data.voice_hint);
+    document.getElementById('pf-error').classList.add('hidden');
+  }catch(err){
+    console.error(err);
+    errEl.textContent = err.message || 'Something went wrong. Try again.';
+    errEl.classList.remove('hidden');
+  }finally{
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
 document.getElementById('pf-save').addEventListener('click', async ()=>{
   const name = document.getElementById('pf-name').value.trim();
   const role = document.getElementById('pf-role').value.trim();
